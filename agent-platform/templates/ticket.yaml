@@ -1,0 +1,52 @@
+id: EVE-000
+title: Example ticket
+
+description: |
+  Describe the business or technical requirement.
+
+objective: |
+  Describe the desired outcome.
+
+acceptance_criteria:
+  - criterion: Example acceptance criterion
+    validation: automated
+
+scope:
+  components:
+    - contracts
+    - dbt
+    - hex
+
+  allowed_paths:
+    - contracts/
+    - warehouse/dbt/
+    - analytics/hex/
+
+  excluded_paths: []
+
+dependencies: []
+
+contracts:
+  changes_required: false
+  affected_contracts: []
+
+implementation:
+  parallelizable: true
+  agents:
+    - data-engineer
+    - dbt-engineer
+    - analytics-engineer
+
+testing:
+  component_tests: true
+  integration_tests: true
+  end_to_end_tests: false
+
+environment:
+  isolated_schema: true
+  schema_prefix: dev
+
+delivery:
+  pull_request_required: true
+  human_approval_required: true
+  deployment_required: false

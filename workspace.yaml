@@ -1,0 +1,63 @@
+version: 1
+
+project:
+  name: eve-gtm-platform
+  architecture: modular-monorepo
+
+components:
+  - name: contracts
+    path: contracts
+    type: shared
+    independently_deployable: false
+
+  - name: data-generation
+    path: data-generation
+    type: application
+    independently_deployable: true
+
+  - name: dbt
+    path: warehouse/dbt
+    type: transformation
+    independently_deployable: true
+    depends_on:
+      - contracts
+
+  - name: hex
+    path: analytics/hex
+    type: analytics
+    independently_deployable: true
+    depends_on:
+      - dbt
+      - contracts
+
+  - name: omni
+    path: analytics/omni
+    type: analytics
+    independently_deployable: true
+    depends_on:
+      - dbt
+      - contracts
+
+  - name: agent-platform
+    path: agent-platform
+    type: orchestration
+    independently_deployable: true
+    depends_on:
+      - contracts
+
+  - name: infrastructure
+    path: infrastructure
+    type: infrastructure
+    independently_deployable: true
+
+# Future repository extraction:
+# Assign a repository URL to a component when it moves out
+# of this monorepo. Keep its path as the integration mount point.
+repositories:
+  contracts: null
+  data-generation: null
+  dbt: null
+  hex: null
+  omni: null
+  agent-platform: null
+  infrastructure: null
