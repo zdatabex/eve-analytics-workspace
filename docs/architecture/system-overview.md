@@ -13,6 +13,18 @@ Defines shared interfaces between components:
 ### Data Generation
 Creates or ingests source data for development and testing.
 
+### Orchestration
+Owns workflow execution and scheduling:
+- Workflow definitions
+- Scheduling and triggering
+- Task dependencies
+- Retries and failure handling
+- Backfills and reprocessing
+- Execution monitoring
+
+Orchestrator-specific implementations (Airflow, Prefect, etc.)
+live under `orchestration/`.
+
 ### Warehouse / dbt
 Owns:
 - Staging models
