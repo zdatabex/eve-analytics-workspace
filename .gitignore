@@ -23,5 +23,10 @@ logs/
 # Agent worktrees
 .worktrees/*
 
+# Generated data
+/data/generated/
+/data/warehouse/*.duckdb
+/data/warehouse/*.wal
+
 # OS
 .DS_Store

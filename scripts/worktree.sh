@@ -5,14 +5,15 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
 COMMAND="${1:-}"
-TICKET="${2:-}"
-SLUG="${3:-}"
+PHASE="${2:-}"
+TICKET="${3:-}"
+SLUG="${4:-}"
 
 usage() {
   echo "Usage:"
-  echo "  $0 create <TICKET-ID> <slug>"
+  echo "  $0 create <spec|impl> <DATA-ID> <slug>"
   echo "  $0 list"
-  echo "  $0 remove <TICKET-ID> <slug>"
+  echo "  $0 remove <spec|impl> <DATA-ID> <slug>"
   exit 1
 }
 
@@ -21,30 +22,47 @@ slugify() {
     sed 's/[^a-z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//'
 }
 
+require_phase() {
+  case "$PHASE" in
+    spec|impl) ;;
+    *) usage ;;
+  esac
+  [[ -n "$TICKET" && -n "$SLUG" ]] || usage
+}
+
 case "$COMMAND" in
   create)
-    [[ -n "$TICKET" && -n "$SLUG" ]] || usage
+    require_phase
 
     SLUG="$(slugify "$SLUG")"
     NAME="${TICKET}-${SLUG}"
-    PATH_TO_WORKTREE="$ROOT/.worktrees/$NAME"
-    BRANCH="ticket/$NAME"
+    PATH_TO_WORKTREE="$ROOT/.worktrees/${PHASE}-${NAME}"
+    BRANCH="${PHASE}/${NAME}"
 
     if [[ -e "$PATH_TO_WORKTREE" ]]; then
-      echo "Worktree already exists: $PATH_TO_WORKTREE"
-      exit 1
+      echo "Worktree already exists:"
+      echo "$PATH_TO_WORKTREE"
+      echo
+      echo "Start working:"
+      echo "cd \"$PATH_TO_WORKTREE\""
+      exit 0
     fi
 
     if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-      echo "Branch already exists: $BRANCH"
-      exit 1
+      git worktree add "$PATH_TO_WORKTREE" "$BRANCH"
+      echo
+      echo "Worktree attached to existing branch:"
+      echo "$PATH_TO_WORKTREE"
+    else
+      git worktree add -b "$BRANCH" "$PATH_TO_WORKTREE" HEAD
+      echo
+      echo "Worktree created:"
+      echo "$PATH_TO_WORKTREE"
     fi
 
-    git worktree add -b "$BRANCH" "$PATH_TO_WORKTREE" HEAD
-
     echo
-    echo "Worktree created:"
-    echo "$PATH_TO_WORKTREE"
+    echo "Branch:"
+    echo "$BRANCH"
     echo
     echo "Start working:"
     echo "cd \"$PATH_TO_WORKTREE\""
@@ -55,11 +73,11 @@ case "$COMMAND" in
     ;;
 
   remove)
-    [[ -n "$TICKET" && -n "$SLUG" ]] || usage
+    require_phase
 
     SLUG="$(slugify "$SLUG")"
     NAME="${TICKET}-${SLUG}"
-    PATH_TO_WORKTREE="$ROOT/.worktrees/$NAME"
+    PATH_TO_WORKTREE="$ROOT/.worktrees/${PHASE}-${NAME}"
 
     git worktree remove "$PATH_TO_WORKTREE"
     echo "Removed: $PATH_TO_WORKTREE"

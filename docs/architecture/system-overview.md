@@ -14,7 +14,7 @@ Defines shared interfaces between components:
 Creates or ingests source data for development and testing.
 
 ### Orchestration
-Owns workflow execution and scheduling:
+Executes data pipelines:
 - Workflow definitions
 - Scheduling and triggering
 - Task dependencies
@@ -24,6 +24,9 @@ Owns workflow execution and scheduling:
 
 Orchestrator-specific implementations (Airflow, Prefect, etc.)
 live under `orchestration/`.
+
+The dispatcher in `agent-platform/dispatcher` moves issue status
+and assigns the owning agent. It does not run data pipelines.
 
 ### Warehouse / dbt
 Owns:
@@ -37,8 +40,11 @@ Owns:
 Hex and Omni consume governed warehouse models and shared metadata.
 
 ### Agent Platform
-Coordinates ticket execution, planning, implementation, testing,
-reviews, and delivery.
+Houses the dispatcher, specification templates, and ticket workflow.
+
+The dispatcher assigns the owning agent and moves issue status.
+Domain agents prepare specifications and implement them.
+The reviewer evaluates specifications and implementations.
 
 ### Infrastructure
 Owns infrastructure provisioning, environments, permissions,

@@ -1,4 +1,4 @@
-# Eve Analytics Platform
+# Eve Analytics Workspace
 
 An end-to-end, modular data and analytics platform.
 
@@ -8,10 +8,12 @@ This repository contains independently managed components:
 
 - `contracts/` - Shared data contracts, schemas, and metadata.
 - `data-generation/` - Source data generation and ingestion.
+- `data/generated/` - Generated source data.
+- `data/warehouse/` - Warehouse data.
 - `warehouse/dbt/` - Warehouse transformations and data models.
 - `analytics/hex/` - Hex notebooks, applications, and workflows.
 - `analytics/omni/` - Omni analytics and semantic assets.
-- `agent-platform/` - Agent orchestration and ticket workflows.
+- `agent-platform/` - Dispatcher, specifications, and ticket workflows.
 - `infrastructure/` - Infrastructure as code and deployment configuration.
 - `tests/` - Cross-component integration and end-to-end tests.
 
@@ -34,8 +36,11 @@ See:
 
 ## Working on a ticket
 
+Issue status, assignment, and delivery are described in `docs/development/agent-workflow.md`.
+
 ```bash
-./scripts/worktree.sh create EVE-123 add-customer-attribute
+./scripts/worktree.sh create spec DATA-123 add-customer-attribute
+./scripts/worktree.sh create impl DATA-123 add-customer-attribute
 ```
 
-Each ticket gets its own branch and worktree under `.worktrees/`.
+Each phase gets its own branch and worktree under `.worktrees/`.
