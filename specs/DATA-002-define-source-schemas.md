@@ -150,6 +150,8 @@ rules: []
 
 `history` is `observation`, `current`, or `immutable`, as assigned per entity below.
 
+`observation_key` is required on every contract. The example above is an `observation` contract, so its key is the source identifier plus `observed_at`. That pair is not the key for every class. History classes below assign it: `observation` uses the source identifier plus `observed_at`; `current` uses the source identifier; a single-identifier `immutable` entity uses that source identifier; campaign performance uses `marketing_campaign_id` plus `performance_date`. A `current` contract and a single-identifier `immutable` contract do not add `observed_at`.
+
 `fields` entries have `name`, `type`, `nullable`, `maps_to`, and `description`. A closed set also has `allowed_values`. `maps_to` is the canonical `entity.attribute` the field feeds, or null when the field is a source signal that is not itself a canonical attribute. `ingestion` entries use the same field shape and always have `maps_to: null`.
 
 `relationships` entries name the local field, the referenced `source_system.source_entity.field`, whether the field is required, and the cardinality in source terms. `events` entries name a lifecycle signal and the condition that emits it. `rules` entries are the entity-specific integrity and inconsistency sentences.
@@ -176,6 +178,8 @@ rules: []
 | `contracts/source/product/usage.yaml` | `product_usage_source_id` | immutable | `product_usage` | One usage of one AI workflow by one product user. |
 | `contracts/source/product/outcome.yaml` | `product_outcome_source_id` | immutable | `product_outcome` | One outcome of one product usage event. |
 
+Every file states the `observation_key` for its history class, as defined under History classes. An `observation` file uses its source identifier plus `observed_at`. A `current` file uses its source identifier. Activity, booking, touch, usage, and outcome use their source identifier alone. Campaign performance uses `marketing_campaign_id` plus `performance_date`. No other file adds `observed_at` to its key.
+
 There is no source contract for `lifecycle_event`, `account` as a merged firm, or a customer object. `customer_converted` and `adoption_reached` are canonical events derived downstream. Product usage remains the usage row. It is not also a `lifecycle_event` payload.
 
 ## Shared contract rules
@@ -198,18 +202,33 @@ Every contract includes these three fields. They are platform delivery metadata.
 | Field | Type | Null | Description |
 |---|---|---|---|
 | `source_system` | enum | no | `hubspot`, `dealhub`, `marketing`, or `product`. The value equals that file's `source_system`. |
-| `delivery_id` | string | no | The extraction batch. Many rows may share one `delivery_id`. A replay uses a new `delivery_id`. |
+| `delivery_id` | string | no | The extraction batch. Many rows may share one `delivery_id`. A replay uses a new `delivery_id` and the same business attributes. |
 | `ingested_at` | timestamp | no | When this delivery was accepted. It may be later than `observed_at`, `occurred_at`, or `booked_at`. Late delivery is valid. |
 
 ### History classes
 
 Source records do not carry `effective_start`, `effective_end`, `is_current`, canonical surrogate keys, or `surviving_*` links. Canonical effective dating is downstream. `observed_at` on an observation is the time that later becomes `effective_start` of a new canonical version. The source row is not that version.
 
-| History | Uniqueness | Redelivery |
+The observation of a source identifier in effect at a timestamp is the row with that identifier whose `observed_at` is the latest at or before that timestamp. If no row of that identifier has `observed_at` at or before the timestamp, no observation is in effect, and a rule that requires one is not satisfied.
+
+`observation_key` is required on every contract. `source_system`, `delivery_id`, and `ingested_at` are delivery metadata. They are not part of `observation_key` and they are not business attributes.
+
+| History | `observation_key` | Row |
 |---|---|---|
-| `observation` | `observation_key` is the source identifier plus `observed_at`. Many rows may share the source identifier. `observed_at` distinguishes them. | A new `delivery_id` for an existing observation key is a replay of that observation, not a second business change. |
-| `current` | The source identifier is unique. The contract stores the current source record, not prior versions. | A later delivery of the same source identifier corrects the current record. |
-| `immutable` | The source identifier, or the composite key named for that entity, identifies one business event. | A later delivery of the same key corrects that event. A new business event uses a new source identifier. A booking correction is a new `dealhub_booking_id`. A campaign-day correction replaces that campaign-day. |
+| `observation` | The source identifier plus `observed_at`. | One observation of one source identifier. Many rows may share the source identifier. `observed_at` distinguishes them. |
+| `current` | The source identifier. | The current source record for a campaign, a Product firm, or an AI workflow. The contract stores that record only. It has no `observed_at`. |
+| `immutable`, one source identifier | That source identifier. | One business event: an activity, a booking, a touch, a usage, or an outcome. The contract has no `observed_at`. |
+| `immutable`, campaign performance | `marketing_campaign_id` plus `performance_date`. | One campaign on one day. The contract has no `observed_at`. |
+
+A delivery has one of three outcomes.
+
+| Outcome | Rule |
+|---|---|
+| Replay | The same `observation_key` and the same business attributes arrive with a new `delivery_id`. This applies to every history class. A different payload at the same `observation_key` is not a replay. |
+| In-place correction | A full replacement of a `history: current` row, or a replacement of one campaign-day's measures. The `observation_key` stays the same. The contract does not keep the replaced values. |
+| New source identifier | A correction of a booking, activity, touch, usage, or outcome. The correction uses a new source identifier. A second delivery of an existing identifier is a replay only when the business attributes match. A different payload does not rewrite that event. |
+
+A different payload at an existing `history: observation` key is invalid. A business change for that class is a new `observed_at`, and therefore a new `observation_key`. A different payload for an existing booking, activity, touch, usage, or outcome identifier is invalid for the same reason: that change is a new source identifier, not a rewrite. A different payload for a `history: current` key, or for a campaign-day key, is the in-place correction above.
 
 ### Identifiers and document numbers
 
@@ -358,7 +377,7 @@ Rules:
 |---|---|---|---|---|
 | `hubspot_deal_id` | string | no | Source identifier. | `opportunity.hubspot_deal_id` |
 | `opportunity_name` | string | no | Deal name. | `opportunity.opportunity_name` |
-| `opportunity_type` | enum | no | `new_business`, `expansion`, `renewal`. Stable across observations of this deal. | `opportunity.opportunity_type` |
+| `opportunity_type` | enum | no | `new_business`, `expansion`, `renewal`. The type as of this observation's `observed_at`. A later observation of the same deal may change it. | `opportunity.opportunity_type` |
 | `stage` | enum | no | Opportunity stage vocabulary. | `opportunity.stage` |
 | `amount` | decimal | yes | HubSpot-entered amount. Not bookings and not ARR. | `opportunity.amount` |
 | `expected_close_date` | date | yes | Sales expectation. Not a contract start. | `opportunity.expected_close_date` |
@@ -370,14 +389,14 @@ Rules:
 | `hubspot_company_id` | string | no | The firm. Stable across observations of this deal. | Reference to the opportunity's account. |
 | `hubspot_contact_id` | string | yes | Primary contact. | Reference to the opportunity's primary contact. |
 | `hubspot_lead_id` | string | yes | Originating lead. Stable when present. | Reference to `lead.hubspot_lead_id`. |
-| `dealhub_subscription_id` | string | yes | Required for `expansion` and `renewal`. Null for `new_business`. | Reference to the targeted subscription. |
+| `dealhub_subscription_id` | string | yes | On this observation, required when `opportunity_type` is `expansion` or `renewal`, and null when it is `new_business`. | Reference to the targeted subscription. |
 
 Relationships:
 
 - `hubspot_company_id` references `hubspot.company.hubspot_company_id`. Required. Many deals may cite one company.
-- `hubspot_contact_id` references `hubspot.contact.hubspot_contact_id`. Optional.
+- `hubspot_contact_id` references `hubspot.contact.hubspot_contact_id`. Optional. When present, the contact observation in effect at the deal's `observed_at` has the same `hubspot_company_id` as the deal.
 - `hubspot_lead_id` references `hubspot.lead.hubspot_lead_id`. Optional. At most one deal cites a given lead.
-- `dealhub_subscription_id` references `dealhub.subscription.dealhub_subscription_id`. Required when `opportunity_type` is `expansion` or `renewal`, and null when it is `new_business`.
+- `dealhub_subscription_id` references `dealhub.subscription.dealhub_subscription_id`. On that observation, required when `opportunity_type` is `expansion` or `renewal`, and null when it is `new_business`. When present, that subscription's `hubspot_company_id` equals the deal's `hubspot_company_id`.
 
 Events:
 
@@ -387,13 +406,15 @@ Events:
 | `opportunity_stage_changed` | `stage` becomes `evaluation`, `proposal`, or `negotiation`. |
 | `opportunity_won` | `stage` becomes `closed_won`. At most one per deal. |
 | `opportunity_lost` | `stage` becomes `closed_lost`. At most one per deal. |
-| none | A later observation whose stage is unchanged. `emitted_event` is null. Amount, close date, owner, forecast, and type may still change. |
+| none | A later observation whose stage is unchanged. `emitted_event` is null. Amount, close date, owner, forecast, and `opportunity_type` may still change. The observation carries the type as of its `observed_at`. |
 
 Rules:
 
 - A deal is not both won and lost.
 - Opening at `discovery` is `opportunity_opened`, not `opportunity_stage_changed`.
-- `new_business` does not reference a subscription. Expansion and renewal reference an existing subscription and do not create one.
+- Each observation carries `opportunity_type` as of `observed_at`. On an observation whose type is `new_business`, `dealhub_subscription_id` is null. On an observation whose type is `expansion` or `renewal`, `dealhub_subscription_id` is required and cites an existing subscription. That observation does not create a subscription.
+- When `hubspot_contact_id` is present, the contact observation in effect at the deal's `observed_at` has the same `hubspot_company_id` as the deal.
+- When `dealhub_subscription_id` is present, that subscription's `hubspot_company_id` equals the deal's `hubspot_company_id`.
 - `amount` may be null. Null is an unreported amount, not zero.
 - The deal contract does not emit `customer_converted`. The account's first win becomes that canonical event downstream.
 - Two deals for one company are two deals when their `hubspot_deal_id` values differ, even when the names match.
@@ -417,8 +438,10 @@ Events: none. The row is the activity. It does not emit a lifecycle event and it
 
 Rules:
 
-- An activity is immutable. A distinct interaction is a new `hubspot_activity_id`.
-- Parents may be any combination. The contract does not require all four.
+- `observation_key` is `hubspot_activity_id`. The contract has no `observed_at`.
+- An activity is immutable. A correction or a distinct interaction is a new `hubspot_activity_id`. A second delivery of an existing identifier is a replay only when the business attributes match. It does not rewrite the activity.
+- At least one parent is present. Omitting an optional parent is valid. The contract does not require all four.
+- When the activity includes `hubspot_company_id` and another parent that has a company, the company identifiers agree. The other parent's company comes from the parent observation in effect at `occurred_at`. A deal has a company. A contact or lead has a company when that observation's `hubspot_company_id` is present. A parent with no company does not constrain the activity's company.
 
 ## DealHub
 
@@ -539,8 +562,9 @@ Events: none. The row is the economic event. `booking_type` classifies it. There
 
 Rules:
 
-- A booking is immutable. A correction or a later commercial event is a new `dealhub_booking_id`.
-- `booking_type` equals `opportunity_type` on the cited deal.
+- `observation_key` is `dealhub_booking_id`. The contract has no `observed_at`.
+- A booking is immutable. A correction or a later commercial event is a new `dealhub_booking_id`. A second delivery of an existing identifier is a replay only when the business attributes match. It does not rewrite the booking.
+- `booking_type` equals `opportunity_type` on the deal observation in effect at `booked_at`.
 - The company identifier matches the company on the cited deal, contract, and subscription.
 - Churn does not create a booking. `booking_amount` is not negative.
 
@@ -563,7 +587,7 @@ Events: none.
 
 Rules:
 
-- History is `current`. Spend and impressions are not fields on the campaign.
+- History is `current`. `observation_key` is `marketing_campaign_id`. This contract has no `observed_at`. Spend and impressions are not fields on the campaign.
 - A channel correction replaces the current campaign record. The contract does not keep the prior channel.
 
 ### Campaign performance
@@ -586,7 +610,8 @@ Events: none.
 
 Rules:
 
-- One row is one campaign-day. A later delivery of the same pair corrects that day.
+- `observation_key` is `marketing_campaign_id` plus `performance_date`. The contract has no `observed_at`.
+- One row is one campaign-day. A second delivery of the same pair with the same measures is a replay. A second delivery that changes the measures replaces that campaign-day. It does not create a second row.
 - Null on a measure means the source did not report it. Null is not zero.
 - The contract does not require `click_count` to be less than or equal to `impression_count`.
 
@@ -610,7 +635,9 @@ Events: none. The row is the attribution event. It has no `observed_at`.
 
 Rules:
 
-- A touch is immutable.
+- `observation_key` is `marketing_touch_source_id`. The contract has no `observed_at`.
+- A touch is immutable. A correction is a new `marketing_touch_source_id`. A second delivery of an existing identifier is a replay only when the business attributes match. It does not rewrite the touch.
+- When the touch includes `hubspot_company_id` and a cited lead or contact has a company, the company identifiers agree, using the lead or contact observation in effect at `occurred_at`. Omitting an optional HubSpot parent is valid.
 - Marketing does not create the contact, lead, or company it cites.
 
 ## Product
@@ -632,7 +659,7 @@ Events: none.
 
 Rules:
 
-- History is `current`. This contract has no `observed_at`. Tracked firmographic history arrives on HubSpot company observations once a company is linked.
+- History is `current`. `observation_key` is `product_firm_id`. This contract has no `observed_at`. Tracked firmographic history arrives on HubSpot company observations once a company is linked.
 - Product `firm_name` and `primary_domain` may differ from HubSpot. Both are stored on their own contracts. Equal domains are the only cross-system firm match. Unequal domains, or a missing domain, remain two accounts downstream.
 - The contract does not deduplicate two Product firms that share a name or a domain.
 
@@ -673,7 +700,7 @@ Events: none.
 
 Rules:
 
-- History is `current`. Usage history is the usage contract.
+- History is `current`. `observation_key` is `product_workflow_id`. This contract has no `observed_at`. Usage history is the usage contract.
 - Example capabilities are intake, medical chronology, and demand-letter drafting. The contract does not close that list.
 
 ### Usage
@@ -693,7 +720,8 @@ Events: none as `emitted_event`. Each row is the `product_usage` lifecycle event
 
 Rules:
 
-- A usage row is immutable.
+- `observation_key` is `product_usage_source_id`. The contract has no `observed_at`.
+- A usage row is immutable. A correction is a new `product_usage_source_id`. A second delivery of an existing identifier is a replay only when the business attributes match. It does not rewrite the usage.
 - `product_firm_id` is the firm cited by that `product_user_source_id` observation in effect at `occurred_at`.
 - Seat count on a subscription does not constrain `work_unit_count` or the number of users.
 
@@ -718,7 +746,8 @@ Events: none as `emitted_event`. The row is the completed result. The account's 
 
 Rules:
 
-- An outcome is immutable.
+- `observation_key` is `product_outcome_source_id`. The contract has no `observed_at`.
+- An outcome is immutable. A correction is a new `product_outcome_source_id`. A second delivery of an existing identifier is a replay only when the business attributes match. It does not rewrite the outcome.
 - `occurred_at` is at or after the cited usage's `occurred_at`.
 - The user, firm, and workflow equal the same fields on the cited usage.
 - Adoption grain is one canonical event per account, derived from the first outcome. The alternative, one adoption event per product user, is not a source field.
@@ -728,6 +757,7 @@ Rules:
 `contracts/source/README.md` states these rules in one place. Each YAML file repeats the sentences that bind its own fields.
 
 - A relationship value, when present, equals a source identifier defined by the referenced contract in the same dataset.
+- When a deal observation has `hubspot_contact_id`, the contact observation in effect at the deal's `observed_at` has the same `hubspot_company_id`. When a deal observation has `dealhub_subscription_id`, that subscription's `hubspot_company_id` equals the deal's. When an activity or a touch includes `hubspot_company_id` and another parent that has a company, the company identifiers agree, using the parent observation in effect at `occurred_at`. Omitting an optional parent stays valid.
 - Referential order for a valid dataset is campaigns and AI workflows, then HubSpot companies and Product firms, then contacts and product users, then leads and touches, then deals, then activities that cite a deal, then quotes, contracts, subscriptions, and bookings, then usage and outcomes. A parent source identifier exists before a child cites it.
 - HubSpot company and Product firm are the same firm downstream only when `primary_domain` is present and equal. The source contracts do not perform that match.
 - HubSpot wins firmographics when a company is linked. Product firm fields remain on the Product contract either way.
@@ -749,13 +779,13 @@ The README reproduces this catalog. Each contract's `rules` include the items th
 2. HubSpot `amount`, DealHub `quoted_amount`, `total_contract_value`, `booking_amount`, and `recurring_amount`, and Marketing `spend_amount`, use different names and stay on different entities.
 3. Product `firm_name` and `primary_domain` may disagree with the HubSpot company. Domain equality is not enforced inside either contract.
 4. `primary_domain` and `email_normalized` are nullable. Duplicate values across source identifiers are valid.
-5. A lead may omit its company and contact. A deal may omit its contact, lead, amount, close date, and forecast. An activity or touch may cite any allowed parent combination.
+5. A lead may omit its company and contact. A deal may omit its contact, lead, amount, close date, and forecast. An activity or touch may omit any optional parent. When that row also includes `hubspot_company_id`, a parent that has a company uses that same company.
 6. Marketing measures are independently nullable, and clicks may exceed impressions.
 7. Subscription renewal and expansion are `emitted_event` values while `status` stays `active`. Status alone does not mean renewal.
 8. Timestamps are not one column. Creation, observation, occurrence, booking, performance day, and term dates stay distinct. Dates have no time. Timestamps are UTC.
 9. Product users are not contacts and are not seats. Usage does not carry a commercial amount.
-10. Immutable business events are not rewritten in place by a second source identifier. Observation history is a new `observed_at` for the same source identifier, not an effective-dated canonical row.
-11. Redelivery is a new `delivery_id` for an existing observation key. It is not a second business event.
+10. A booking, activity, touch, usage, or outcome is not rewritten in place. A correction of one of those events is a new source identifier. A business change on an observation is a new `observed_at` for the same source identifier, not an effective-dated canonical row. A campaign-day correction replaces that day's measures. A current-row correction replaces the current record.
+11. A replay is a new `delivery_id` for an existing `observation_key` whose business attributes match. A different payload at that key is not a replay and is not a second business event. It is invalid except for an in-place correction of a current row or of one campaign-day's measures.
 12. The contracts do not contain ARR, retention, pipeline coverage, win rate, or adoption score.
 
 ## Assumptions and source limitations
@@ -798,11 +828,11 @@ The README records these as assumptions inherited from the approved model.
 - [ ] HubSpot, DealHub, Marketing, and Product each have the source entities in the inventory. Apollo, Clay, `lifecycle_event`, and a customer object have no source contract.
 - [ ] Every business field in the entity sections is present with the stated type, nullability, constraints, and `maps_to`.
 - [ ] Every contract includes `source_system`, `delivery_id`, and `ingested_at` as ingestion metadata with `maps_to` null.
-- [ ] Every contract states `history`, a row-grain sentence, `source_identifier`, and `observation_key`.
+- [ ] Every contract states `history`, a row-grain sentence, `source_identifier`, and `observation_key`. The key is the source identifier plus `observed_at` for `observation`, the source identifier for `current` and for a single-identifier `immutable` entity, and `marketing_campaign_id` plus `performance_date` for campaign performance.
 - [ ] Source identifiers and document numbers follow the identifier rules. Canonical surrogate keys, `surviving_*` fields, `commercial_status`, and effective-dating columns are absent.
 - [ ] Relationship fields reference source identifiers, state whether they are required, and do not embed parent payloads.
 - [ ] Lead, deal, and subscription document `emitted_event` and the choosing rules in those sections. `working`, `pending`, and a non-event `active` observation emit no lifecycle signal. Renewal and expansion are explicit while status stays `active`.
-- [ ] Activity, booking, touch, usage, and outcome are immutable rows. Usage is the product-usage event. Outcome does not contain `adoption_reached`. Booking does not contain churn.
+- [ ] Activity, booking, touch, usage, and outcome are immutable rows. A correction of one of them is a new source identifier. A second delivery of an existing identifier matches the stored business attributes. Usage is the product-usage event. Outcome does not contain `adoption_reached`. Booking does not contain churn.
 - [ ] Closed vocabularies match the frozen working values. Open catalogs remain unconstrained strings. `hubspot_lifecycle_stage` is not the canonical commercial-status enum.
 - [ ] The README and the entity rules document the inconsistency catalog, the cross-contract referential rules, the assumptions, and the source limitations.
 - [ ] No field stores ARR, retention, pipeline coverage, win rate, adoption score, or an amount copied from another source entity.
