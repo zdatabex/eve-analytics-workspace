@@ -7,8 +7,7 @@ skills:
   - data-modeling
   - data-generation
 priority: critical
-components:
-  - docs
+components: []
 dependencies: []
 requires_approval: true
 allowed_paths:
@@ -89,9 +88,9 @@ The implementation writes the design artifacts listed under Deliverables. It cov
 8. Historical tracking, including where slowly changing dimension Type 2 is appropriate.
 9. Proposed analytical facts and dimensions.
 10. Business events required for lifecycle analysis.
-11. A proposal for the source entities and relationships synthetic generation will need.
+11. A logical source schema for synthetic generation: source entities, source identifiers, attributes required for canonical mapping, relationships, and the lifecycle events those sources emit. Physical field types, nullability, and contract files stay with DATA-002.
 
-`docs` is the single component entry because the only files in scope are design documents. No component listed in `workspace.yaml` changes, so this specification does not require integration tests.
+`components` is empty. The files in scope are design documents under `docs/data-model/`, and `docs` is not a component in `workspace.yaml`. Integration tests are required when a specification lists more than one component. This specification lists none, so `testing.integration_tests` is false.
 
 Later issues own the work in the table below. This specification stops at the design documents.
 
@@ -106,7 +105,7 @@ Later issues own the work in the table below. This specification stops at the de
 
 Orchestration workflows, infrastructure, and deployment are outside this task.
 
-The source proposal in this design names entities, identifiers, relationships, and the attributes required to explain canonical mapping. Field-level data types and contract files begin in DATA-002.
+The source proposal in `decisions.md` names source entities, source identifiers, attributes required for canonical mapping, relationships, and the lifecycle events those sources emit. Physical field types, nullability, and contract files begin in DATA-002.
 
 ## Deliverables
 
@@ -125,11 +124,11 @@ Create these four files. They are the complete file set for the implementation.
 - One section per canonical entity with business meaning, grain, primary key, business key, foreign keys, and attributes.
 - Each attribute has a business definition. State when an attribute is required for pipeline, bookings, ARR, retention, or adoption.
 - Relationship cardinality for each foreign key, matching the diagram.
-- Proposed facts and dimensions. Each grain is a sentence of the form "one row represents ...".
-- Business events, each with name, grain, the entity it belongs to, the timestamp that orders it, and the lifecycle stage it records.
+- Proposed facts and dimensions. Each grain is a sentence of the form "one row represents ...". The entity section states the business grain: one instance of the entity. A fact or dimension grain stays consistent with that entity. Where Type 2 applies, the dimension row grain is the effective-dated grain defined in `decisions.md`, and the entity section still states the business grain. Those are different grains, and both are required.
+- Business events, each with name, grain, the entity it belongs to, the timestamp that orders it, and the lifecycle stage it records. In `entities.md` or `decisions.md`, list the canonical stage and status values that choose each event, or mark that vocabulary as an open question for human review before DATA-002.
 - Uniqueness and referential integrity expectations for each entity, stated so a later contract or test can enforce them.
 
-The event list must be able to represent lead creation and qualification, opportunity open, stage change, win, and loss, customer conversion, product adoption and usage, and renewal, expansion, and churn. The design names the events and the entities that carry them.
+The event list must be able to represent lead creation and qualification, opportunity open, stage change, win, and loss, customer conversion, product adoption and usage, and renewal, expansion, and churn. The design names the events and the entities that carry them. `entities.md` or `decisions.md` lists the canonical stage and status values that choose an event, or marks that list as an open question.
 
 ### `docs/data-model/source-mapping.md`
 
@@ -141,9 +140,9 @@ The event list must be able to represent lead creation and qualification, opport
 
 ### `docs/data-model/decisions.md`
 
-- Historical tracking strategy. For each entity whose changes affect pipeline, bookings, ARR, retention, or adoption, name the approach. Where slowly changing dimension Type 2 is the approach, define the effective-start, effective-end, and current-row grain. Where another approach is used, explain why Type 2 is a poor fit.
-- Identity resolution and deduplication. Cover law firm versus contact versus product user, and lead versus customer. State match keys, the surviving canonical identifier, and the duplicate cases the model expects.
-- Synthetic data strategy. Propose the source entities and relationships a later generator needs so it can emit referentially consistent records for the canonical model. Name the lifecycle events those sources must be able to emit. Identify configurable seed, volume, and distribution as generator inputs for DATA-003. Proposed source records carry observed attributes and events. Revenue metrics and other business calculations stay out of those source records.
+- Historical tracking strategy. For each entity whose changes affect pipeline, bookings, ARR, retention, or adoption, name the approach. Where slowly changing dimension Type 2 is the approach, define the dimension row grain as the effective-dated grain: effective start, effective end, and the current row. The entity section in `entities.md` still states the business grain. Where another approach is used, explain why Type 2 is a poor fit.
+- Identity resolution and deduplication. Cover law firm versus contact versus product user, and lead versus customer. State match keys, the surviving canonical identifier, and the duplicate cases the model expects. A non-surviving duplicate keeps its source identifier and a link to the surviving canonical identifier.
+- Synthetic data strategy. Propose the logical source schema a later generator needs so it can emit referentially consistent records for the canonical model. Name source entities, source identifiers, attributes required for canonical mapping, relationships, and the lifecycle events those sources must be able to emit. Physical field types, nullability, and contract files stay with DATA-002. Identify configurable seed, volume, and distribution as generator inputs for DATA-003. Proposed source records carry observed attributes and events. Revenue metrics and other business calculations stay out of those source records.
 - Assumptions, constraints, limitations, and open questions. Mark any unresolved choice that would change grain, identity, or revenue history for human review before DATA-002 starts.
 - A statement that this task leaves `contracts/` unchanged. Recommendations for a future shared contract are written here and implemented, if approved, by DATA-002.
 
@@ -171,14 +170,14 @@ The event list must be able to represent lead creation and qualification, opport
 - [ ] Every canonical entity defines a primary key and its foreign keys. Each foreign key references a documented primary key.
 - [ ] Each entity states its business key where one exists, and the design records why the primary key is that business key or a surrogate.
 - [ ] Source ownership is documented for HubSpot, DealHub, Marketing, and Product, including source identifiers and the canonical identifier they resolve to.
-- [ ] The identity strategy documents how a firm, contact, lead, opportunity, customer, and product user are reconciled across those systems, including deduplication.
-- [ ] Grain is explicit for every proposed fact and dimension, and that grain agrees with the entity it describes.
+- [ ] The identity strategy documents how a firm, contact, lead, opportunity, customer, and product user are reconciled across those systems, including deduplication. A non-surviving duplicate keeps its source identifier and a link to the surviving canonical identifier.
+- [ ] Grain is explicit for every proposed fact and dimension, and that grain stays consistent with the entity it describes. The entity section states the business grain. Where Type 2 applies, `decisions.md` states the dimension row grain as the effective-dated grain (effective start, effective end, and the current row). Those two statements describe different grains, and both are required.
 - [ ] Historical tracking requirements are identified. Entities that need Type 2 history name that approach and its effective-dating grain. Other entities state why history is unnecessary or why a different approach is used.
-- [ ] Business events required for Lead → Opportunity → Customer → Adoption → Renewal are identified, including events that can support pipeline, bookings, ARR, retention, and product adoption.
-- [ ] The proposed source entities and relationships are sufficient for a later generator to emit referentially consistent records for the canonical model, and they are written as a proposal in `decisions.md`.
+- [ ] Business events required for Lead → Opportunity → Customer → Adoption → Renewal are identified, including events that can support pipeline, bookings, ARR, retention, and product adoption. The design lists the canonical stage and status values that choose each event, or marks that vocabulary as an open question.
+- [ ] The `decisions.md` proposal names source entities, source identifiers, attributes required for canonical mapping, relationships, and the lifecycle events those sources emit. The proposal is sufficient for a later generator to emit referentially consistent records for the canonical model. Physical field types, nullability, and contract files stay with DATA-002.
 - [ ] Conflicting or ambiguous source attributes are listed, each with an assumption or an open question.
-- [ ] Assumptions, limitations, and unresolved questions are in `decisions.md`. Unresolved choices that would change identity, grain, or revenue history are marked for human review.
-- [ ] Every canonical entity named in the source map and the event list appears in the diagram and in `entities.md`. Cardinality, keys, and grain agree across the four files.
+- [ ] Assumptions, limitations, and unresolved questions are in `decisions.md`. Unresolved choices that would change identity, grain, or revenue history are marked for human review. An unresolved stage and status vocabulary is marked as an open question.
+- [ ] Every canonical entity named in the source map and the event list appears in the diagram and in `entities.md`. Cardinality and keys agree across the four files. Business grain and, where Type 2 applies, the effective-dated row grain are both stated and stay consistent with each other.
 - [ ] `contracts/`, `data-generation/`, `warehouse/`, `analytics/`, and `orchestration/` are unchanged.
 
 ## Execution notes
@@ -187,7 +186,7 @@ Implement this specification only after it has merged and the issue label is `st
 
 Read the data-modeling skill before choosing entities, keys, grain, and mappings. Read the data-generation skill as a constraint on the synthetic data proposal. Generator code, scenario code, contract files, and dbt models sit outside `allowed_paths`.
 
-Review the four documents together before opening the implementation pull request. Check that cardinality, keys, grains, source identifiers, and events agree.
+Review the four documents together before opening the implementation pull request. Check that cardinality, keys, source identifiers, and events agree, and that the business grain and any Type 2 effective-dated row grain stay consistent with each other.
 
 Where the fictional process does not force a choice, record an assumption or an open question. The approval gate for this design is `delivery.human_approval_required`. DATA-002 starts after a human approves the design.
 
