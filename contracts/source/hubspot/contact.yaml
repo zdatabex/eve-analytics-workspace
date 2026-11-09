@@ -1,0 +1,89 @@
+id: hubspot.contact
+title: 'HubSpot contact'
+source_system: hubspot
+source_entity: contact
+canonical_entity: contact
+history: observation
+grain: 'One row represents one observation of one HubSpot contact at one observed_at.'
+source_identifier:
+  - hubspot_contact_id
+observation_key:
+  - hubspot_contact_id
+  - observed_at
+fields:
+  - name: hubspot_contact_id
+    type: string
+    nullable: false
+    maps_to: contact.hubspot_contact_id
+    description: 'Opaque non-empty source identifier issued by the source system. Not a canonical surrogate key. The contract accepts any non-empty string and does not reject a value solely for its shape. HubSpot identifiers are expected to be numeric strings. That shape is an assumption, not a rejection rule.'
+  - name: full_name
+    type: string
+    nullable: true
+    maps_to: contact.full_name
+    description: 'Name as sales knows it. Open text. A missing value is null, not an empty string.'
+  - name: email_normalized
+    type: string
+    nullable: true
+    maps_to: contact.email_normalized
+    description: 'Lowercase trimmed email when present. A missing value is null, not an empty string. Duplicate emails across contacts are valid. The contract does not choose a survivor.'
+  - name: title
+    type: string
+    nullable: true
+    maps_to: contact.title
+    description: 'Role title. Open text. A missing value is null, not an empty string.'
+  - name: buying_role
+    type: enum
+    nullable: true
+    maps_to: contact.buying_role
+    allowed_values:
+      - champion
+      - decision_maker
+      - user
+      - billing
+    description: 'Buying role. No other value is valid. A missing value is null, not an empty string.'
+  - name: observed_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'Observation time. ISO-8601 timestamp in UTC. Part of the observation key with hubspot_contact_id. Downstream, this time starts a new contact version when firm, role, or email changes. The source row is not that canonical version.'
+  - name: hubspot_company_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Current firm link. Reference to account through account.hubspot_company_id. Not a canonical surrogate key. A missing value is null, not an empty string. The cited company exists in the same dataset when this field is present.'
+ingestion:
+  - name: source_system
+    type: enum
+    nullable: false
+    maps_to: null
+    allowed_values:
+      - hubspot
+    description: 'Platform delivery metadata. The value equals the source_system of this file. The platform vocabulary is hubspot, dealhub, marketing, or product. This field is not a canonical business attribute and does not open a canonical Type 2 version by itself. It is not part of observation_key.'
+  - name: delivery_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The extraction batch. A required string is present and non-empty. Many rows may share one delivery_id. A replay uses a new delivery_id and the same business attributes. Not a canonical business attribute and not part of observation_key.'
+  - name: ingested_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'When this delivery was accepted. ISO-8601 timestamp in UTC. It may be later than observed_at, occurred_at, or booked_at. Late delivery is valid. Not a canonical business attribute and not part of observation_key.'
+relationships:
+  - field: hubspot_company_id
+    references: hubspot.company.hubspot_company_id
+    required: false
+    cardinality: 'Many contacts may cite one company.'
+events: []
+rules:
+  - 'The same email_normalized may appear on more than one hubspot_contact_id. The contract does not choose a survivor.'
+  - 'A contact may change hubspot_company_id on a later observation of the same source identifier.'
+  - 'A contact without an email is valid and cannot match a product user by email.'
+  - 'email_normalized, when present, is lowercase and trimmed. A missing email is null, not an empty string. Duplicate emails across source identifiers are valid.'
+  - 'When hubspot_company_id is present, the cited company exists in the same dataset.'
+  - 'This contract emits no lifecycle signal.'
+  - 'When a relationship value is present, it equals a source identifier defined by the referenced contract in the same dataset. Relationship fields store the parent source identifier. They do not embed the parent record.'
+  - 'History is observation. A different payload at an existing observation_key is invalid. A business change is a new observed_at, and therefore a new observation_key. A replay is a new delivery_id for an existing observation_key whose business attributes match.'
+  - 'Source identifiers are opaque non-empty strings. HubSpot identifiers are expected to be numeric strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
+  - 'source_system, delivery_id, and ingested_at are platform delivery metadata. They are not canonical business attributes, they do not open a canonical Type 2 version by themselves, and they are not part of observation_key. source_system equals hubspot. A replay uses a new delivery_id and the same business attributes. ingested_at may be later than the business timestamps on the row. Late delivery is valid.'
+  - 'This contract does not contain canonical surrogate keys, surviving_account_id, surviving_contact_id, surviving_lead_id, surviving_opportunity_id, surviving_subscription_id, surviving_product_user_id, commercial_status, effective_start, effective_end, is_current, customer_converted, adoption_reached, or a lifecycle_event payload. It does not contain calculated ARR, net retention, pipeline coverage, win rate, or an adoption score, and it does not copy an amount from another source entity.'

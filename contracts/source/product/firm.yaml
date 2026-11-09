@@ -1,0 +1,63 @@
+id: product.firm
+title: 'Product firm'
+source_system: product
+source_entity: firm
+canonical_entity: account
+history: current
+grain: 'One row represents one Product firm.'
+source_identifier:
+  - product_firm_id
+observation_key:
+  - product_firm_id
+fields:
+  - name: product_firm_id
+    type: string
+    nullable: false
+    maps_to: account.product_firm_id
+    description: 'Opaque non-empty source identifier issued by the source system. Not a canonical surrogate key. The contract accepts any non-empty string and does not reject a value solely for its shape. Product identifiers are expected to be opaque strings. That shape is an assumption, not a rejection rule.'
+  - name: firm_name
+    type: string
+    nullable: false
+    maps_to: account.firm_name
+    description: 'The product name for the tenant. A required string is present and non-empty. Feeds account.firm_name only while no HubSpot company is linked. HubSpot wins firm_name once a company is linked, and this value stays on the Product contract either way.'
+  - name: primary_domain
+    type: string
+    nullable: true
+    maps_to: account.primary_domain
+    description: 'Lowercase host when present, with no scheme and no path. Feeds account.primary_domain for cross-system matching. A missing value is null, not an empty string. Equal domains are the only cross-system firm match.'
+  - name: state
+    type: string
+    nullable: true
+    maps_to: account.state
+    description: 'Open text for a US state, not a closed list of postal codes. Feeds account.state only while no HubSpot company is linked. A missing value is null, not an empty string.'
+ingestion:
+  - name: source_system
+    type: enum
+    nullable: false
+    maps_to: null
+    allowed_values:
+      - product
+    description: 'Platform delivery metadata. The value equals the source_system of this file. The platform vocabulary is hubspot, dealhub, marketing, or product. This field is not a canonical business attribute and does not open a canonical Type 2 version by itself. It is not part of observation_key.'
+  - name: delivery_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The extraction batch. A required string is present and non-empty. Many rows may share one delivery_id. A replay uses a new delivery_id and the same business attributes. Not a canonical business attribute and not part of observation_key.'
+  - name: ingested_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'When this delivery was accepted. ISO-8601 timestamp in UTC. It may be later than observed_at, occurred_at, or booked_at. Late delivery is valid. Not a canonical business attribute and not part of observation_key.'
+relationships: []
+events: []
+rules:
+  - 'History is current. observation_key is product_firm_id. The contract has no observed_at and stores the current record only. A replay is a new delivery_id for the same observation_key whose business attributes match. A different payload at that key is an in-place correction and replaces the current record. The contract does not keep the replaced values.'
+  - 'The same firm as a HubSpot company shares primary_domain. The Product contract does not store hubspot_company_id. The source contracts do not perform that match.'
+  - 'Product firm_name and primary_domain may differ from HubSpot. Both are stored on their own contracts. Equal domains are the only cross-system firm match. Unequal domains, or a missing domain, remain two accounts downstream. Domain equality is not enforced inside this contract.'
+  - 'The contract does not deduplicate two Product firms that share a name or a domain.'
+  - 'Tracked firmographic history arrives on HubSpot company observations once a company is linked. Product firm history before a HubSpot company is linked is only the current Product firm record.'
+  - 'primary_domain, when present, is a lowercase host with no scheme and no path. A missing primary_domain is valid. Duplicate domains across Product firms are valid.'
+  - 'This contract has no relationships and emits no lifecycle signal.'
+  - 'Source identifiers are opaque non-empty strings. Product identifiers are expected to be opaque strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
+  - 'source_system, delivery_id, and ingested_at are platform delivery metadata. They are not canonical business attributes, they do not open a canonical Type 2 version by themselves, and they are not part of observation_key. source_system equals product. A replay uses a new delivery_id and the same business attributes. ingested_at may be later than the business timestamps on the row. Late delivery is valid.'
+  - 'This contract does not contain canonical surrogate keys, surviving_account_id, surviving_contact_id, surviving_lead_id, surviving_opportunity_id, surviving_subscription_id, surviving_product_user_id, commercial_status, effective_start, effective_end, is_current, customer_converted, adoption_reached, or a lifecycle_event payload. It does not contain calculated ARR, net retention, pipeline coverage, win rate, or an adoption score, and it does not copy an amount from another source entity.'

@@ -1,0 +1,68 @@
+id: marketing.campaign
+title: 'Marketing campaign'
+source_system: marketing
+source_entity: campaign
+canonical_entity: campaign
+history: current
+grain: 'One row represents one marketing campaign.'
+source_identifier:
+  - marketing_campaign_id
+observation_key:
+  - marketing_campaign_id
+fields:
+  - name: marketing_campaign_id
+    type: string
+    nullable: false
+    maps_to: campaign.marketing_campaign_id
+    description: 'Opaque non-empty source identifier issued by the source system. Not a canonical surrogate key. The contract accepts any non-empty string and does not reject a value solely for its shape. Marketing identifiers are expected to be opaque strings. That shape is an assumption, not a rejection rule.'
+  - name: campaign_code
+    type: string
+    nullable: false
+    maps_to: campaign.campaign_code
+    description: 'Required campaign code. Stable across observations of the same source identifier and unique across different source identifiers of this entity. A required string is present and non-empty.'
+  - name: campaign_name
+    type: string
+    nullable: false
+    maps_to: campaign.campaign_name
+    description: 'Program name. A required string is present and non-empty.'
+  - name: channel
+    type: enum
+    nullable: false
+    maps_to: campaign.channel
+    allowed_values:
+      - paid_search
+      - paid_social
+      - email
+      - webinar
+      - partner
+      - outbound
+    description: 'Campaign channel. Stable for the life of the campaign. No other value is valid. Spend and impressions are not fields on the campaign.'
+ingestion:
+  - name: source_system
+    type: enum
+    nullable: false
+    maps_to: null
+    allowed_values:
+      - marketing
+    description: 'Platform delivery metadata. The value equals the source_system of this file. The platform vocabulary is hubspot, dealhub, marketing, or product. This field is not a canonical business attribute and does not open a canonical Type 2 version by itself. It is not part of observation_key.'
+  - name: delivery_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The extraction batch. A required string is present and non-empty. Many rows may share one delivery_id. A replay uses a new delivery_id and the same business attributes. Not a canonical business attribute and not part of observation_key.'
+  - name: ingested_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'When this delivery was accepted. ISO-8601 timestamp in UTC. It may be later than observed_at, occurred_at, or booked_at. Late delivery is valid. Not a canonical business attribute and not part of observation_key.'
+relationships: []
+events: []
+rules:
+  - 'History is current. observation_key is marketing_campaign_id. The contract has no observed_at and stores the current record only. A replay is a new delivery_id for the same observation_key whose business attributes match. A different payload at that key is an in-place correction and replaces the current record. The contract does not keep the replaced values.'
+  - 'Spend and impressions are not fields on the campaign. Daily delivery is the campaign performance contract.'
+  - 'A channel correction replaces the current campaign record. The contract does not keep the prior channel. Campaign channel history is only the current campaign record.'
+  - 'campaign_code is stable for this marketing_campaign_id and unique across different marketing_campaign_id values. A channel correction does not change campaign_code.'
+  - 'This contract has no relationships and emits no lifecycle signal.'
+  - 'Source identifiers are opaque non-empty strings. Marketing identifiers are expected to be opaque strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
+  - 'source_system, delivery_id, and ingested_at are platform delivery metadata. They are not canonical business attributes, they do not open a canonical Type 2 version by themselves, and they are not part of observation_key. source_system equals marketing. A replay uses a new delivery_id and the same business attributes. ingested_at may be later than the business timestamps on the row. Late delivery is valid.'
+  - 'This contract does not contain canonical surrogate keys, surviving_account_id, surviving_contact_id, surviving_lead_id, surviving_opportunity_id, surviving_subscription_id, surviving_product_user_id, commercial_status, effective_start, effective_end, is_current, customer_converted, adoption_reached, or a lifecycle_event payload. It does not contain calculated ARR, net retention, pipeline coverage, win rate, or an adoption score, and it does not copy an amount from another source entity.'

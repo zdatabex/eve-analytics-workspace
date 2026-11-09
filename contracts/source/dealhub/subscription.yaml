@@ -1,0 +1,143 @@
+id: dealhub.subscription
+title: 'DealHub subscription'
+source_system: dealhub
+source_entity: subscription
+canonical_entity: subscription
+history: observation
+grain: 'One row represents one observation of one DealHub subscription at one observed_at.'
+source_identifier:
+  - dealhub_subscription_id
+observation_key:
+  - dealhub_subscription_id
+  - observed_at
+fields:
+  - name: dealhub_subscription_id
+    type: string
+    nullable: false
+    maps_to: subscription.dealhub_subscription_id
+    description: 'Opaque non-empty source identifier issued by the source system. Not a canonical surrogate key. The contract accepts any non-empty string and does not reject a value solely for its shape. DealHub identifiers are expected to be prefixed strings. That shape is an assumption, not a rejection rule.'
+  - name: subscription_number
+    type: string
+    nullable: false
+    maps_to: subscription.subscription_number
+    description: 'Required document number. Stable across observations of the same source identifier and unique across different source identifiers of this entity. A required string is present and non-empty.'
+  - name: status
+    type: enum
+    nullable: false
+    maps_to: subscription.status
+    allowed_values:
+      - pending
+      - active
+      - churned
+    description: 'Subscription status. No other value is valid. Durable status stays active across renewals and expansions.'
+  - name: plan_code
+    type: string
+    nullable: false
+    maps_to: subscription.plan_code
+    description: 'Open commercial catalog. Not a closed vocabulary. A required string is present and non-empty.'
+  - name: seat_count
+    type: integer
+    nullable: false
+    maps_to: subscription.seat_count
+    description: 'Whole number. Minimum 0. Commercial seats, not a count of product users. Subscription seat_count and the number of product users are different quantities.'
+  - name: recurring_amount
+    type: decimal
+    nullable: false
+    maps_to: subscription.recurring_amount
+    description: 'Recurring fee. Not annualized ARR. Non-negative base-10 amount in US dollars with at most two fraction digits. The contract forbids a binary float. There is no currency field. recurring_amount and billing_frequency are the ARR inputs. This file does not annualize recurring_amount. There is no periodic ARR snapshot in this contract.'
+  - name: billing_frequency
+    type: enum
+    nullable: false
+    maps_to: subscription.billing_frequency
+    allowed_values:
+      - monthly
+      - quarterly
+      - annual
+    description: 'Billing frequency. No other value is valid.'
+  - name: term_start
+    type: date
+    nullable: false
+    maps_to: subscription.term_start
+    description: 'Current term start. ISO-8601 calendar date. No time and no timezone.'
+  - name: term_end
+    type: date
+    nullable: false
+    maps_to: subscription.term_end
+    description: 'Current term end. ISO-8601 calendar date. No time and no timezone. Greater than or equal to term_start.'
+  - name: observed_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'Observation time. ISO-8601 timestamp in UTC. Part of the observation key with dealhub_subscription_id. Downstream, a tracked subscription attribute change starts a new subscription version. The source row is not that canonical version.'
+  - name: emitted_event
+    type: enum
+    nullable: true
+    maps_to: null
+    allowed_values:
+      - subscription_renewed
+      - subscription_expanded
+      - subscription_churned
+    description: 'Lifecycle signal for renewal, expansion, or churn. Downstream this chooses lifecycle_event.event_name. Null when status is pending, or when status is active and the observation is not a renewal or expansion. A missing value is null, not an empty string.'
+  - name: dealhub_contract_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'Granting contract. A required string is present and non-empty. Stable across observations of this subscription. Reference to the subscription contract.'
+  - name: hubspot_company_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The firm. A required string is present and non-empty. Reference to the subscription account. It matches the company on the cited contract.'
+ingestion:
+  - name: source_system
+    type: enum
+    nullable: false
+    maps_to: null
+    allowed_values:
+      - dealhub
+    description: 'Platform delivery metadata. The value equals the source_system of this file. The platform vocabulary is hubspot, dealhub, marketing, or product. This field is not a canonical business attribute and does not open a canonical Type 2 version by itself. It is not part of observation_key.'
+  - name: delivery_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The extraction batch. A required string is present and non-empty. Many rows may share one delivery_id. A replay uses a new delivery_id and the same business attributes. Not a canonical business attribute and not part of observation_key.'
+  - name: ingested_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'When this delivery was accepted. ISO-8601 timestamp in UTC. It may be later than observed_at, occurred_at, or booked_at. Late delivery is valid. Not a canonical business attribute and not part of observation_key.'
+relationships:
+  - field: dealhub_contract_id
+    references: dealhub.contract.dealhub_contract_id
+    required: true
+    cardinality: 'One contract may be cited by many subscriptions.'
+  - field: hubspot_company_id
+    references: hubspot.company.hubspot_company_id
+    required: true
+    cardinality: 'Many subscriptions may cite one company.'
+events:
+  - signal: subscription_renewed
+    condition: 'A renewal observation. status is active. Many renewals may occur for one subscription.'
+  - signal: subscription_expanded
+    condition: 'An expansion observation. status is active. Many expansions may occur for one subscription.'
+  - signal: subscription_churned
+    condition: 'status is churned. One per subscription.'
+  - signal: none
+    condition: 'status is pending, or status is active and the observation is not a renewal or expansion. emitted_event is null.'
+rules:
+  - 'Durable status stays active across renewals and expansions. The event is not inferred from status alone. emitted_event carries it.'
+  - 'A renewal or expansion may also change term_start, term_end, recurring_amount, or seat_count on that same observation.'
+  - 'pending does not emit subscription_renewed or subscription_expanded. pending and active do not by themselves emit a subscription event.'
+  - 'Churn does not emit a booking and does not use a negative amount. Churn is at most once per subscription. There is no partial downsell source record. Churn ends a subscription. Expansion increases it.'
+  - 'There is no periodic ARR snapshot in this contract. recurring_amount and billing_frequency are the ARR inputs. This file does not annualize recurring_amount.'
+  - 'A second purchased product is a second dealhub_subscription_id.'
+  - 'subscription_number is stable across observations of the same dealhub_subscription_id and unique across different dealhub_subscription_id values.'
+  - 'dealhub_contract_id is stable across observations of this subscription. hubspot_company_id matches the company on the cited contract.'
+  - 'term_end is greater than or equal to term_start. seat_count minimum is 0.'
+  - 'Renewals and expansions may repeat. subscription_churned occurs at most once per subscription.'
+  - 'When a relationship value is present, it equals a source identifier defined by the referenced contract in the same dataset. Relationship fields store the parent source identifier. They do not embed the parent record.'
+  - 'History is observation. A different payload at an existing observation_key is invalid. A business change is a new observed_at, and therefore a new observation_key. A replay is a new delivery_id for an existing observation_key whose business attributes match.'
+  - 'Source identifiers are opaque non-empty strings. DealHub identifiers are expected to be prefixed strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
+  - 'source_system, delivery_id, and ingested_at are platform delivery metadata. They are not canonical business attributes, they do not open a canonical Type 2 version by themselves, and they are not part of observation_key. source_system equals dealhub. A replay uses a new delivery_id and the same business attributes. ingested_at may be later than the business timestamps on the row. Late delivery is valid.'
+  - 'This contract does not contain canonical surrogate keys, surviving_account_id, surviving_contact_id, surviving_lead_id, surviving_opportunity_id, surviving_subscription_id, surviving_product_user_id, commercial_status, effective_start, effective_end, is_current, customer_converted, adoption_reached, or a lifecycle_event payload. It does not contain calculated ARR, net retention, pipeline coverage, win rate, or an adoption score, and it does not copy an amount from another source entity.'
+  - 'Term dates, observation time, and ingestion time stay distinct. Dates have no time. Timestamps are UTC.'
