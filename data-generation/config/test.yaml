@@ -1,0 +1,156 @@
+seed: 7
+start_date: 2024-03-01
+end_date: 2024-04-14
+
+account_count: 8
+contacts_per_account: 2
+lead_count: 16
+campaign_count: 2
+activity_count: 4
+touch_count: 3
+product_users_per_customer: 2
+usage_events_per_user: 2
+
+opportunity_win_rate: 0.5
+stage_mix:
+  discovery: 1
+  evaluation: 1
+  proposal: 1
+  negotiation: 1
+  closed_won: 8
+  closed_lost: 4
+lead_status_mix:
+  new: 1
+  working: 1
+  qualified: 1
+  disqualified: 1
+  converted: 4
+renewal_rate: 0.5
+expansion_rate: 0.5
+churn_rate: 0.5
+channel_mix:
+  paid_search: 1
+  paid_social: 1
+  email: 1
+  webinar: 1
+  partner: 1
+  outbound: 1
+outcome_rate: 0.5
+domain_match_rate: 0.5
+
+null_company_domain_rate: 0.125
+duplicate_contact_email_rate: 0.125
+orphan_lead_rate: 0.125
+null_deal_amount_rate: 0.2
+single_parent_activity_rate: 0.25
+null_performance_measure_rate: 0.05
+clicks_exceed_impressions_rate: 0.05
+null_user_email_rate: 0.25
+company_change_rate: 0.25
+
+lifecycle_stage_catalog:
+  - sql
+  - prospect
+  - customer
+  - former_customer
+  - evangelist
+owner_names:
+  - Avery Chen
+  - Blake Okonkwo
+  - Cameron Ruiz
+  - Devon Patel
+practice_focuses:
+  - personal injury
+  - medical malpractice
+  - mass tort
+  - employment
+plan_codes:
+  - starter
+  - professional
+  - firm
+workflows:
+  - code: intake
+    name: Intake
+  - code: medical_chronology
+    name: Medical chronology
+  - code: demand_letter
+    name: Demand-letter drafting
+states:
+  - CA
+  - NY
+  - TX
+  - FL
+  - IL
+firm_prefixes:
+  - Northstar
+  - Harbor
+  - Redwood
+  - Summit
+  - Copperline
+  - Brightwater
+  - Ironwood
+  - Lakeside
+  - Meridian
+  - Oakmont
+  - Pinegrove
+  - Westbridge
+hubspot_firm_suffixes:
+  - Law Group
+  - LLP
+  - Trial Lawyers
+product_firm_suffixes:
+  - PLLC
+  - Trial Network
+  - Advocacy
+person_names:
+  - Jordan Hale
+  - Riley Nguyen
+  - Casey Morgan
+  - Avery Brooks
+  - Quinn Alvarez
+  - Parker Singh
+  - Rowan Bennett
+  - Skyler Ahmed
+titles:
+  - Managing Partner
+  - Associate
+  - Paralegal
+  - Intake Director
+campaign_names:
+  - Plaintiff Intake Search
+  - Demand Letter Webinar
+  - Partner Referral
+  - Outbound Trial Counsel
+activity_subjects:
+  call:
+    - Intro call
+    - Renewal check-in
+  email:
+    - Follow-up email
+    - Proposal email
+  meeting:
+    - Discovery meeting
+    - Negotiation meeting
+opportunity_name_template: "{firm_name} {opportunity_type}"
+forecast_by_stage:
+  discovery: pipeline
+  evaluation: pipeline
+  proposal: best_case
+  negotiation: commit
+  closed_won: closed
+  closed_lost: omitted
+amount_ranges:
+  hubspot_amount: {min: "10000.00", max: "19999.99"}
+  quoted_amount: {min: "20000.00", max: "29999.99"}
+  total_contract_value: {min: "30000.00", max: "39999.99"}
+  booking_amount_new_business: {min: "40000.00", max: "49999.99"}
+  booking_amount_expansion: {min: "50000.00", max: "59999.99"}
+  booking_amount_renewal: {min: "60000.00", max: "69999.99"}
+  recurring_amount: {min: "100.00", max: "899.99"}
+  spend_amount: {min: "10.00", max: "99.99"}
+integer_ranges:
+  seat_count: {min: 5, max: 40}
+  impression_count: {min: 10, max: 500}
+  click_excess: {min: 1, max: 30}
+  work_unit_count: {min: 1, max: 4}
+term_days: 30
