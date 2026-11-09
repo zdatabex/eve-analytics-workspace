@@ -12,6 +12,40 @@ class DealHubGenerator:
     def __init__(self, world: World) -> None:
         self.world = world
 
+    def add_quote(
+        self,
+        deal_id: str,
+        company_id: str,
+        status: str,
+        quoted_amount: Decimal | None,
+        quote_id: str | None = None,
+        quote_number: str | None = None,
+    ) -> dict:
+        quote_id = quote_id or self.world.ids.prefixed("qte_")
+        quote_number = quote_number or self.world.ids.document("Q")
+        observed_at = self.world.timestamp()
+        self.world.emit(
+            "dealhub.quote",
+            {
+                "dealhub_quote_id": quote_id,
+                "quote_number": quote_number,
+                "status": status,
+                "quoted_amount": quoted_amount,
+                "observed_at": observed_at,
+                "hubspot_deal_id": deal_id,
+                "hubspot_company_id": company_id,
+            },
+            observed_at,
+        )
+        return {
+            "dealhub_quote_id": quote_id,
+            "quote_number": quote_number,
+            "hubspot_deal_id": deal_id,
+            "hubspot_company_id": company_id,
+            "observed_at": observed_at,
+            "status": status,
+        }
+
     def add_accepted_quote(
         self,
         deal_id: str,
@@ -52,6 +86,7 @@ class DealHubGenerator:
         observed_at: datetime,
         contract_id: str | None = None,
         contract_number: str | None = None,
+        status: str = "active",
     ) -> dict:
         contract_id = contract_id or self.world.ids.prefixed("ctr_")
         contract_number = contract_number or self.world.ids.document("C")
@@ -60,7 +95,7 @@ class DealHubGenerator:
             {
                 "dealhub_contract_id": contract_id,
                 "contract_number": contract_number,
-                "status": "active",
+                "status": status,
                 "total_contract_value": total_contract_value,
                 "start_date": start_date,
                 "end_date": end_date,

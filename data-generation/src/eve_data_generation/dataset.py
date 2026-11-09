@@ -9,6 +9,7 @@ from eve_data_generation.config import Config, ensure_window
 from eve_data_generation.contracts import Contract, load_contracts
 from eve_data_generation.errors import ConfigError
 from eve_data_generation.population import baseline_population
+from eve_data_generation.scenarios import scenario_population
 from eve_data_generation.validate import validate_dataset
 from eve_data_generation.world import World
 
@@ -46,19 +47,21 @@ def _check_vocabulary(config: Config, contracts: dict[str, Contract]) -> None:
 def build_dataset(config: Config, population=None) -> Dataset:
     """Generate one dataset.
 
-    ``population`` replaces the baseline sampler. It receives the generation
-    world and may call the HubSpot, DealHub, Marketing, and Product generators.
-    Named journeys belong to DATA-004 and are not implemented here.
+    ``population`` replaces the sampler. When it is omitted, a configuration
+    that contains ``journeys`` uses the scenario population. Every other
+    configuration uses ``baseline_population``.
     """
 
     contracts = load_contracts()
     _check_vocabulary(config, contracts)
     ensure_window(config)
     world = World(config, contracts)
-    if population is None:
-        baseline_population(world)
-    else:
+    if population is not None:
         population(world)
+    elif config.journeys is not None:
+        scenario_population(world)
+    else:
+        baseline_population(world)
     dataset = Dataset(
         seed=config.seed,
         config_file=config.config_file,

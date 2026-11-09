@@ -276,13 +276,15 @@ def _commercial(dataset) -> None:
         if win["opportunity_type"] == "new_business":
             if len(contracts_by_deal[deal_id]) != 1:
                 raise ValidationError(f"new-business win {deal_id} does not have one contract")
-            deal_quotes = [
-                quote
-                for quote_rows in quotes.values()
-                for quote in quote_rows
-                if quote["hubspot_deal_id"] == deal_id
-            ]
-            if not deal_quotes or any(quote["status"] != "accepted" or quote["quoted_amount"] is None for quote in deal_quotes):
+            contract_id = next(iter(contracts_by_deal[deal_id]))
+            first = min(contracts[contract_id], key=lambda item: item["observed_at"])
+            effective = _in_effect(quotes.get(first["dealhub_quote_id"], []), first["observed_at"])
+            if (
+                effective is None
+                or effective["hubspot_deal_id"] != deal_id
+                or effective["status"] != "accepted"
+                or effective["quoted_amount"] is None
+            ):
                 raise ValidationError(f"new-business win {deal_id} needs an accepted quote")
             deal_bookings = [booking for booking in bookings if booking["hubspot_deal_id"] == deal_id]
             if len(deal_bookings) != 1 or deal_bookings[0]["booking_type"] != "new_business":
@@ -303,6 +305,10 @@ def _commercial(dataset) -> None:
             raise ValidationError("contract end_date is before start_date")
         if len({row["contract_number"] for row in rows}) != 1:
             raise ValidationError("contract_number changed")
+    for quote_rows in quotes.values():
+        for quote in quote_rows:
+            if quote["status"] != "draft" and quote["quoted_amount"] is None:
+                raise ValidationError("quoted_amount is required when the quote is no longer draft")
 
 
 def _subscriptions(dataset) -> None:

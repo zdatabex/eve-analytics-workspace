@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     generate.add_argument("--config", required=True, help="Path to a generation YAML file")
     generate.add_argument("--output", help="Dataset directory. Defaults to output/<config name>")
 
-    load = commands.add_parser("load", help="Load a dataset into dev_data_003")
+    load = commands.add_parser("load", help="Load a dataset into the configured schema")
     load.add_argument("--config", required=True, help="Path to the generation YAML file")
     load.add_argument("--dataset-dir", help="Dataset directory. Defaults to output/<config name>")
     load.add_argument("--warehouse", help="DuckDB file. Overrides EVE_DATA_GENERATION_DUCKDB_PATH")
@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
             write_dataset(dataset, load_contracts(), directory)
             print(directory)
         else:
-            load_dataset(directory, args.warehouse)
+            load_dataset(directory, args.warehouse, config.schema)
             print(directory)
     except (ConfigError, GenerationError, OSError) as exc:
         print(str(exc), file=sys.stderr)

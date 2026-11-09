@@ -40,7 +40,7 @@ python3 -m eve_data_generation load --config config/test.yaml
 
 The loader reads `EVE_DATA_GENERATION_DUCKDB_PATH`. When that variable is unset or empty, the target is `output/warehouse/dev_data_003`. `data-generation/.env.example` contains that variable as an empty placeholder and no credentials. This package does not load a dotenv file. Export the variable in the shell when a different file is required.
 
-The schema name is `dev_data_003`. Table names are `src_<source_system>_<source_entity>`, for example `src_hubspot_company` and `src_marketing_campaign_performance`. Columns are the contract fields followed by `source_system`, `delivery_id`, and `ingested_at`. A load replaces each table. A second load of the same dataset does not append rows.
+The schema name is `dev_data_003` when the configuration omits `schema`. A file that sets `schema` loads that schema instead. Scenario files set `dev_data_004` and do not create `dev_data_003`. Table names are `src_<source_system>_<source_entity>`, for example `src_hubspot_company` and `src_marketing_campaign_performance`. Columns are the contract fields followed by `source_system`, `delivery_id`, and `ingested_at`. A load replaces each table. A second load of the same dataset does not append rows.
 
 The DuckDB file name can match the schema name. The loader qualifies every table as `<catalog>.dev_data_003.<table>` so those two names stay distinct.
 
@@ -121,4 +121,70 @@ HubSpot identifiers are numeric strings beginning at `10000001`. DealHub identif
 
 ## Population extension
 
-`build_dataset(config, population=None)` builds the dataset. The default population is the baseline sampler in `eve_data_generation.population`. Pass a callable `population(world)` to replace that sampler. The callable may use the HubSpot, DealHub, Marketing, and Product generators on `world`. An empty population still validates: every contract key is present and may be an empty list. This package ships the baseline sampler only.
+`build_dataset(config, population=None)` builds the dataset. The default population is the baseline sampler in `eve_data_generation.population`. Pass a callable `population(world)` to replace that sampler. The callable may use the HubSpot, DealHub, Marketing, and Product generators on `world`. An empty population still validates: every contract key is present and may be an empty list. When the loaded configuration contains `journeys`, and the caller does not pass a population, `build_dataset` selects the scenario population below. `config/default.yaml` and `config/test.yaml` have no `journeys` key and keep the baseline sampler.
+
+## GTM lifecycle scenarios
+
+`config/scenarios.yaml` is the development journey dataset. Its seed is `1004` and its window is 2024-01-01 through 2025-07-01. `config/scenarios-test.yaml` is the dataset the scenario component tests generate and load. Its seed is `4004`. Its window is longer than 180 days and shorter than the development window, so a renewal can add `term_days` to `term_end` and `end_date` and still land inside the window. Both files set every journey count to 1. `term_days` is 180.
+
+Generate and load use the same commands as the baseline sampler:
+
+```bash
+python3 -m eve_data_generation generate --config config/scenarios.yaml
+python3 -m eve_data_generation generate --config config/scenarios-test.yaml
+python3 -m eve_data_generation load --config config/scenarios-test.yaml
+```
+
+From this directory, the component tests are:
+
+```bash
+python3 -m pytest tests
+```
+
+A scenario load writes schema `dev_data_004`. It replaces table contents on reload. It does not create schema `dev_data_003`. Baseline loads still use `dev_data_003`. Generated files stay under `output/` and are not committed.
+
+### Journeys
+
+Each count is a positive integer. Each instance has its own HubSpot company, non-null `primary_domain`, contacts, leads, and deals. Customer journeys do not share a subscription or a contract. A customer journey is one whose company has a new-business win: `new_business_conversion`, `expansion`, `renewal`, `churn`, and `low_adoption`. `lost_opportunity` and `stage_regression` are not customer journeys.
+
+| Journey | What it emits |
+|---|---|
+| `new_business_conversion` | Converting lead, won new-business deal, accepted quote history, contract, pending-then-active subscription, new-business booking, call, email, meeting, and product usage with outcomes. Two contacts share one email. |
+| `expansion` | Its own new-business win, then a won expansion deal, `subscription_expanded`, a higher `total_contract_value` on the same contract, and an expansion booking. |
+| `renewal` | Its own new-business win, then a won renewal deal, `subscription_renewed`, a later `end_date` on the same contract, and a renewal booking. |
+| `churn` | Its own new-business win, falling `work_unit_count`, `subscription_churned`, a terminated contract, `former_customer`, and an inactive product user. No booking at or after churn. |
+| `lost_opportunity` | Converting lead and a lost deal. The quote ends `rejected`. No contract, subscription, booking, or product firm. |
+| `stage_regression` | Converting lead and an open deal that moves `proposal` back to `evaluation`. The quote ends `expired`. No contract, subscription, booking, or product firm. |
+| `low_adoption` | Its own new-business win and one `case_analysis` usage with no outcome. |
+
+The domain twin is an extra company, not an eighth journey. It copies the `new_business_conversion` domain, uses a different `hubspot_company_id`, has no won deal, and has one lead that ends `disqualified`.
+
+Journey counts and the sequences in this file decide companies, contacts, leads, deals, quotes, contracts, subscriptions, bookings, activities, touches, firms, users, usage, and outcomes. The retained count and rate keys still have to pass the baseline vocabulary and window checks. The scenario population does not use `account_count`, `contacts_per_account`, `lead_count`, `campaign_count`, `activity_count`, `touch_count`, `product_users_per_customer`, `usage_events_per_user`, or the rate keys to decide journey size or journey outcomes.
+
+### Scenario keys
+
+| Key | Committed value | Behavior |
+|---|---|---|
+| `journeys` | 1 for each of the seven names | Selects this population. |
+| `schema` | `dev_data_004` | Schema the loader creates. Absent on baseline files, which keep `dev_data_003`. |
+| `ingest_lag_days` | 1 | Days added to `ingested_at` on a late immutable row. |
+| `late_event_count` | 1 | How many immutable rows arrive late. |
+| `expansion_seat_increase` | 1 | Seats added on `subscription_expanded`. |
+| `expansion_recurring_increase` | `10.00` | Added to `recurring_amount` on expansion. |
+| `contract_value_increase` | `100.00` | Added to `total_contract_value` on the expansion amendment. |
+
+Amount ranges, integer ranges, `term_days`, and catalogs are read from the same file. The scenario does not encode real prices, win rates, or customer economics. Deal `amount`, `quoted_amount`, `total_contract_value`, `booking_amount`, and `recurring_amount` are drawn separately. `expected_close_date` and contract `start_date` are chosen independently. `seat_count` is not the number of product users.
+
+`ingested_at` defaults to the business timestamp. `late_event_count` immutable rows set it exactly `ingest_lag_days` later. That later timestamp stays inside the window and does not move `created_at`, `observed_at`, `occurred_at`, or `booked_at`.
+
+### Business assumptions
+
+- A canceled subscription is `status` `churned` and `emitted_event` `subscription_churned`. The subscription vocabulary has no `canceled` value. The related contract ends `terminated`. Churn does not create a booking.
+- A soft-deleted record remains in the extract. Product-user removal is a later `inactive` observation. A lead that will not proceed ends `disqualified`. A quote that will not be signed ends `expired` or `rejected`. The contracts have no delete flag, and observation history is kept.
+- A merged account is two HubSpot companies with the same `primary_domain` and different source identifiers. The source row does not name a survivor. One Product firm uses that domain.
+- A workflow start is a product usage row. Processing volume is `work_unit_count`. A completion is an outcome of `draft_completed` or `exported`. A human review is an outcome of `review_accepted`. A run that does not complete is a usage row with no outcome. The usage contract has no failure status.
+- Customer health is not a generated score. A healthy journey is the new-business company with an active subscription, an active product user, sales activities, and an outcome. A declining journey is the churn company: falling `work_unit_count`, then `subscription_churned`, a terminated contract, `former_customer`, and an `inactive` user. Low adoption is a won company with usage and no outcome.
+- `hubspot_lifecycle_stage` values `prospect`, `customer`, and `former_customer` are unconstrained source labels. They are not canonical `commercial_status`.
+- Bookings and subscription fees answer different questions. Bookings are immutable booking rows. Subscription fees are `recurring_amount` and `billing_frequency`. This task does not annualize those fees.
+- The domain twin and the duplicate contacts are intentional source duplicates. Identity resolution remains downstream.
+

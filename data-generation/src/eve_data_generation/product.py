@@ -51,8 +51,14 @@ class ProductGenerator:
             "state": state,
         }
 
-    def add_user(self, firm_id: str, email_normalized: str | None, status: str) -> dict:
-        user_id = self.world.ids.prefixed("usr_")
+    def add_user(
+        self,
+        firm_id: str,
+        email_normalized: str | None,
+        status: str,
+        user_id: str | None = None,
+    ) -> dict:
+        user_id = user_id or self.world.ids.prefixed("usr_")
         observed_at = self.world.timestamp()
         self.world.emit(
             "product.user",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -92,6 +93,28 @@ TOP_LEVEL = frozenset(
     }
 )
 
+JOURNEY_NAMES = (
+    "new_business_conversion",
+    "expansion",
+    "renewal",
+    "churn",
+    "lost_opportunity",
+    "stage_regression",
+    "low_adoption",
+)
+
+SCENARIO_KEYS = (
+    "journeys",
+    "schema",
+    "ingest_lag_days",
+    "late_event_count",
+    "expansion_seat_increase",
+    "expansion_recurring_increase",
+    "contract_value_increase",
+)
+
+_SCHEMA_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+
 
 @dataclass(frozen=True)
 class Bounds:
@@ -161,6 +184,13 @@ class Config:
     amount_ranges: dict[str, Bounds]
     integer_ranges: dict[str, IntegerBounds]
     term_days: int
+    journeys: dict[str, int] | None = None
+    schema: str | None = None
+    ingest_lag_days: int | None = None
+    late_event_count: int | None = None
+    expansion_seat_increase: int | None = None
+    expansion_recurring_increase: Decimal | None = None
+    contract_value_increase: Decimal | None = None
 
     @property
     def delivery_id(self) -> str:
@@ -191,6 +221,74 @@ def _rate(value: object, key: str) -> Decimal:
     if rate < 0 or rate > 1:
         raise ConfigError(f"{key} must be between 0 and 1")
     return rate
+
+
+def _positive_int(value: object, key: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(f"{key} must be a positive integer")
+    return value
+
+
+def _positive_decimal(value: object, key: str) -> Decimal:
+    amount = _decimal(value, key)
+    exponent = amount.as_tuple().exponent
+    if isinstance(exponent, int) and exponent < -2:
+        raise ConfigError(f"{key} must have at most two fraction digits")
+    if amount <= 0:
+        raise ConfigError(f"{key} must be a positive decimal")
+    return amount.quantize(Decimal("0.01"))
+
+
+def _journeys(value: object) -> dict[str, int]:
+    if not isinstance(value, dict) or set(value) != set(JOURNEY_NAMES):
+        raise ConfigError("journeys must map the seven journey names to positive integers")
+    return {name: _positive_int(value[name], f"journeys.{name}") for name in JOURNEY_NAMES}
+
+
+def _schema_name(value: object) -> str:
+    if not isinstance(value, str) or _SCHEMA_NAME.fullmatch(value) is None:
+        raise ConfigError("schema must be a lowercase SQL identifier")
+    return value
+
+
+def _scenario_options(payload: dict) -> dict:
+    present = [key for key in SCENARIO_KEYS if key in payload]
+    if "journeys" in payload and set(present) != set(SCENARIO_KEYS):
+        missing = [key for key in SCENARIO_KEYS if key not in payload]
+        raise ConfigError(f"missing configuration keys: {', '.join(missing)}")
+    options = {
+        "journeys": None,
+        "schema": None,
+        "ingest_lag_days": None,
+        "late_event_count": None,
+        "expansion_seat_increase": None,
+        "expansion_recurring_increase": None,
+        "contract_value_increase": None,
+    }
+    if "journeys" in payload:
+        options["journeys"] = _journeys(payload["journeys"])
+    if "schema" in payload:
+        options["schema"] = _schema_name(payload["schema"])
+    if "ingest_lag_days" in payload:
+        options["ingest_lag_days"] = _positive_int(payload["ingest_lag_days"], "ingest_lag_days")
+    if "late_event_count" in payload:
+        options["late_event_count"] = _positive_int(payload["late_event_count"], "late_event_count")
+    if "expansion_seat_increase" in payload:
+        options["expansion_seat_increase"] = _positive_int(
+            payload["expansion_seat_increase"],
+            "expansion_seat_increase",
+        )
+    if "expansion_recurring_increase" in payload:
+        options["expansion_recurring_increase"] = _positive_decimal(
+            payload["expansion_recurring_increase"],
+            "expansion_recurring_increase",
+        )
+    if "contract_value_increase" in payload:
+        options["contract_value_increase"] = _positive_decimal(
+            payload["contract_value_increase"],
+            "contract_value_increase",
+        )
+    return options
 
 
 def _count(value: object, key: str) -> int:
@@ -250,7 +348,7 @@ def _integer_bounds(payload: object, key: str) -> IntegerBounds:
 def config_from_mapping(payload: dict, config_file: str) -> Config:
     if not isinstance(payload, dict):
         raise ConfigError("configuration must be a mapping")
-    unknown = set(payload) - TOP_LEVEL
+    unknown = set(payload) - TOP_LEVEL - set(SCENARIO_KEYS)
     missing = TOP_LEVEL - set(payload)
     if unknown:
         raise ConfigError(f"unknown configuration keys: {', '.join(sorted(unknown))}")
@@ -341,6 +439,13 @@ def config_from_mapping(payload: dict, config_file: str) -> Config:
         raise ConfigError("integer_ranges.work_unit_count min must be at least 1")
     if integer_ranges["click_excess"].minimum < 1:
         raise ConfigError("integer_ranges.click_excess min must be at least 1")
+    scenario = _scenario_options(payload)
+    if scenario["journeys"] is not None:
+        bounds = integer_ranges["work_unit_count"]
+        if bounds.maximum < 2 or bounds.maximum <= bounds.minimum:
+            raise ConfigError(
+                "integer_ranges.work_unit_count max must be at least 2 and greater than min"
+            )
 
     values = {key: _count(payload[key], key) for key in COUNT_KEYS}
     rates = {key: _rate(payload[key], key) for key in RATE_KEYS}
@@ -372,6 +477,7 @@ def config_from_mapping(payload: dict, config_file: str) -> Config:
         channel_mix=_positive_weights(payload["channel_mix"], "channel_mix"),
         **values,
         **rates,
+        **scenario,
     )
 
 

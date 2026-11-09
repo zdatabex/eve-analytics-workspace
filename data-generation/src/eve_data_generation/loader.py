@@ -1,4 +1,4 @@
-"""Load generated JSON Lines into the isolated dev_data_003 schema."""
+"""Load generated JSON Lines into an isolated development schema."""
 
 from __future__ import annotations
 
@@ -69,15 +69,23 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def load_dataset(directory: Path, database: str | Path | None = None) -> Path:
-    """Replace every source table in schema dev_data_003."""
+def load_dataset(
+    directory: Path,
+    database: str | Path | None = None,
+    schema_name: str | None = None,
+) -> Path:
+    """Replace every source table in the requested schema.
+
+    Baseline loads use ``dev_data_003``. A configuration that sets ``schema``
+    passes that name and does not create ``dev_data_003``.
+    """
 
     contracts = load_contracts()
     target = warehouse_path(database)
     target.parent.mkdir(parents=True, exist_ok=True)
     connection = duckdb.connect(str(target))
     try:
-        schema = _ident(SCHEMA_NAME)
+        schema = _ident(schema_name or SCHEMA_NAME)
         catalog = connection.execute("SELECT current_catalog()").fetchone()[0]
         qualified_schema = f"{_quote(catalog)}.{_quote(schema)}"
         connection.execute(f"CREATE SCHEMA IF NOT EXISTS {qualified_schema}")
