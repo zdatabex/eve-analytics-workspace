@@ -7,3 +7,5 @@ Examples:
 - dbt staging to marts
 - Marts to analytics consumers
 - Contract compatibility
+
+Generated source datasets are validated in `generated_data/`.
