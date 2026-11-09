@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from eve_data_generation.config import Config
@@ -23,6 +23,8 @@ class World:
         self.delivery_id = config.delivery_id
         self.window_start, self.window_end = window_bounds(config.start_date, config.end_date)
         self.rows: dict[str, list[dict]] = {contract_id: [] for contract_id in contracts}
+        late_count = config.late_event_count if config.journeys is not None else 0
+        self.late_remaining = late_count or 0
 
     def timestamp(self) -> datetime:
         return self.clock.take()
@@ -46,15 +48,39 @@ class World:
         bounds = self.config.integer_ranges[range_name]
         return self.rng.randint(bounds.minimum, bounds.maximum)
 
-    def emit(self, contract_id: str, values: dict, business_ts: datetime | None) -> dict:
+    def emit(
+        self,
+        contract_id: str,
+        values: dict,
+        business_ts: datetime | None,
+        ingested_at: datetime | None = None,
+    ) -> dict:
         contract = self.contracts[contract_id]
         row = dict(values)
         row["source_system"] = contract.source_system
         row["delivery_id"] = self.delivery_id
-        row["ingested_at"] = business_ts if business_ts is not None else self.window_start
+        if ingested_at is None:
+            ingested_at = self._late_ingested(contract, business_ts)
+        if ingested_at is None:
+            ingested_at = business_ts if business_ts is not None else self.window_start
+        row["ingested_at"] = ingested_at
         _check_row(self, contract, row, business_ts)
         self.rows[contract_id].append(row)
         return row
+
+    def _late_ingested(self, contract: Contract, business_ts: datetime | None) -> datetime | None:
+        """Shift the next immutable rows by ``ingest_lag_days`` when a scenario asks for them."""
+
+        if self.late_remaining <= 0 or business_ts is None or contract.history != "immutable":
+            return None
+        lag_days = self.config.ingest_lag_days
+        if lag_days is None:
+            return None
+        lagged = business_ts + timedelta(days=lag_days)
+        if lagged > self.window_end:
+            return None
+        self.late_remaining -= 1
+        return lagged
 
 
 def _check_domain(value: str) -> None:

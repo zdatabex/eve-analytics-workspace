@@ -49,6 +49,14 @@ def lead_path(latest: str) -> tuple[tuple[str, str | None], ...]:
     raise ValueError(f"unknown lead status {latest}")
 
 
+CONVERTING_LEAD = (
+    ("new", "lead_created"),
+    ("working", None),
+    ("qualified", "lead_qualified"),
+    ("converted", "lead_converted"),
+)
+
+
 class HubSpotGenerator:
     def __init__(self, world: World) -> None:
         self.world = world
@@ -134,13 +142,18 @@ class HubSpotGenerator:
         contact_id: str | None,
         campaign_id: str | None,
         deal_id: str | None,
+        path: tuple[tuple[str, str | None], ...] | None = None,
     ) -> dict:
         lead_id = self.world.ids.hubspot()
         created_at = None
-        for status, event in lead_path(latest_status):
+        converted_at = None
+        steps = path if path is not None else lead_path(latest_status)
+        for status, event in steps:
             observed_at = self.world.timestamp()
             if created_at is None:
                 created_at = observed_at
+            if event == "lead_converted":
+                converted_at = observed_at
             self.world.emit(
                 "hubspot.lead",
                 {
@@ -158,12 +171,58 @@ class HubSpotGenerator:
             )
         return {
             "hubspot_lead_id": lead_id,
-            "status": latest_status,
+            "status": steps[-1][0],
             "hubspot_company_id": company_id,
             "hubspot_contact_id": contact_id,
             "hubspot_deal_id": deal_id,
             "created_at": created_at,
+            "converted_at": converted_at,
         }
+
+    def observe_deal(
+        self,
+        deal_id: str,
+        company_name: str,
+        company_id: str,
+        contact_id: str | None,
+        lead_id: str | None,
+        subscription_id: str | None,
+        opportunity_type: str,
+        stage: str,
+        amount: Decimal | None,
+        owner_name: str,
+        expected_close_date,
+        created_at: datetime,
+        observed_at: datetime,
+        opening: bool,
+    ) -> str:
+        event = deal_event(stage, 0 if opening else 1)
+        name = self.world.config.opportunity_name_template.format(
+            firm_name=company_name,
+            opportunity_type=opportunity_type,
+        )
+        self.world.emit(
+            "hubspot.deal",
+            {
+                "hubspot_deal_id": deal_id,
+                "opportunity_name": name,
+                "opportunity_type": opportunity_type,
+                "stage": stage,
+                "amount": amount,
+                "expected_close_date": expected_close_date,
+                "owner_name": owner_name,
+                "forecast_category": self.world.config.forecast_by_stage[stage],
+                "created_at": created_at,
+                "observed_at": observed_at,
+                "emitted_event": event,
+                "hubspot_company_id": company_id,
+                "hubspot_contact_id": contact_id,
+                "hubspot_lead_id": lead_id,
+                "dealhub_subscription_id": subscription_id,
+            },
+            observed_at,
+        )
+        return event
 
     def add_deal(
         self,
@@ -183,40 +242,30 @@ class HubSpotGenerator:
         path = stages_through(latest_stage)
         if path[0] != "discovery":
             raise ValueError("a deal opens at discovery")
-        name = self.world.config.opportunity_name_template.format(
-            firm_name=company_name,
-            opportunity_type=opportunity_type,
-        )
         created_at = None
         win_at = None
         for index, stage in enumerate(path):
             observed_at = self.world.timestamp()
             if created_at is None:
                 created_at = observed_at
-            event = deal_event(stage, index)
+            event = self.observe_deal(
+                deal_id=deal_id,
+                company_name=company_name,
+                company_id=company_id,
+                contact_id=contact_id,
+                lead_id=lead_id,
+                subscription_id=subscription_id,
+                opportunity_type=opportunity_type,
+                stage=stage,
+                amount=amount,
+                owner_name=owner_name,
+                expected_close_date=expected_close_date,
+                created_at=created_at,
+                observed_at=observed_at,
+                opening=index == 0,
+            )
             if event == "opportunity_won":
                 win_at = observed_at
-            self.world.emit(
-                "hubspot.deal",
-                {
-                    "hubspot_deal_id": deal_id,
-                    "opportunity_name": name,
-                    "opportunity_type": opportunity_type,
-                    "stage": stage,
-                    "amount": amount,
-                    "expected_close_date": expected_close_date,
-                    "owner_name": owner_name,
-                    "forecast_category": self.world.config.forecast_by_stage[stage],
-                    "created_at": created_at,
-                    "observed_at": observed_at,
-                    "emitted_event": event,
-                    "hubspot_company_id": company_id,
-                    "hubspot_contact_id": contact_id,
-                    "hubspot_lead_id": lead_id,
-                    "dealhub_subscription_id": subscription_id,
-                },
-                observed_at,
-            )
         return {
             "hubspot_deal_id": deal_id,
             "hubspot_company_id": company_id,
