@@ -272,7 +272,7 @@ def _baseline(run: DatasetRun, defects: list[Defect], recommendations: list[tupl
 
 def _scenarios(run: DatasetRun, defects: list[Defect], recommendations: list[tuple[str, str]]) -> None:
     try:
-        found = _identify(run, defects)
+        members, outsiders = _identify(run, defects)
     except Exception as exc:
         add_defect(
             defects, run, "distributions_and_edge_cases",
@@ -281,16 +281,25 @@ def _scenarios(run: DatasetRun, defects: list[Defect], recommendations: list[tup
         )
         _blank_edges(run)
         return
-    run.journeys = [(name, "1", "1" if found.get(name) else "0") for name in (*JOURNEYS, "domain twin")]
+    names = (*JOURNEYS, "domain twin")
+    run.journeys = [(name, "1", str(len(members[name]))) for name in names]
     for name, _expected, observed in run.journeys:
         if observed != "1":
             add_defect(
                 defects, run, "distributions_and_edge_cases",
                 "Both scenario datasets contain one instance of each journey and the domain twin.",
-                field=name, actual="missing",
+                field=name, actual=observed,
             )
+    for company_id in outsiders:
+        add_defect(
+            defects, run, "distributions_and_edge_cases",
+            "Every company is one of the seven journey companies or the domain twin.",
+            entity="hubspot.company", key=f"hubspot_company_id={company_id}",
+            field="hubspot_company_id", actual=company_id,
+        )
     flags = {name: False for name in SCENARIO_EDGE_NAMES}
-    if all(found.get(name) for name in (*JOURNEYS, "domain twin")):
+    if all(len(members[name]) == 1 for name in names):
+        found = {name: members[name][0] for name in names}
         flags = _scenario_details(run, defects, found)
     run.edges = [(name, "present" if flags[name] else "missing") for name in SCENARIO_EDGE_NAMES]
     for name, status in run.edges:
@@ -310,7 +319,7 @@ def _scenarios(run: DatasetRun, defects: list[Defect], recommendations: list[tup
         ))
 
 
-def _identify(run: DatasetRun, defects: list[Defect]) -> dict[str, str]:
+def _identify(run: DatasetRun, defects: list[Defect]) -> tuple[dict[str, list[str]], list[str]]:
     companies = group_rows(run.rows["hubspot.company"], "hubspot_company_id")
     deals = group_rows(run.rows["hubspot.deal"], "hubspot_deal_id")
     by_company = defaultdict(list)
@@ -330,58 +339,61 @@ def _identify(run: DatasetRun, defects: list[Defect]) -> dict[str, str]:
         domain = latest(rows).get("primary_domain")
         if domain:
             domains[domain].append(company_id)
-    shared = [owners for owners in domains.values() if len(owners) == 2]
-    found = {}
-    if len(shared) == 1:
-        left, right = shared[0]
-        if left in customers and right not in customers:
-            found["new_business_conversion"] = left
-            found["domain twin"] = right
-        elif right in customers and left not in customers:
-            found["new_business_conversion"] = right
-            found["domain twin"] = left
-    remaining = [company_id for company_id in customers if company_id != found.get("new_business_conversion")]
-    for company_id in remaining:
+    members: dict[str, list[str]] = {name: [] for name in (*JOURNEYS, "domain twin")}
+    customer_ids = set(customers)
+    for owners in domains.values():
+        if len(owners) != 2:
+            continue
+        left, right = owners
+        if left in customer_ids and right not in customer_ids:
+            members["new_business_conversion"].append(left)
+            members["domain twin"].append(right)
+        elif right in customer_ids and left not in customer_ids:
+            members["new_business_conversion"].append(right)
+            members["domain twin"].append(left)
+    nb_ids = set(members["new_business_conversion"])
+    twin_ids = set(members["domain twin"])
+    for company_id in customers:
+        if company_id in nb_ids:
+            continue
         types = {won_type(deal_id) for deal_id in by_company.get(company_id, [])}
         subscription_status = _customer_subscription_status(run, company_id, by_company, deals)
         if "expansion" in types:
-            found.setdefault("expansion", company_id)
+            members["expansion"].append(company_id)
         elif "renewal" in types:
-            found.setdefault("renewal", company_id)
+            members["renewal"].append(company_id)
         elif subscription_status == "churned":
-            found.setdefault("churn", company_id)
+            members["churn"].append(company_id)
         else:
-            found.setdefault("low_adoption", company_id)
-    non_customers = [
-        company_id for company_id in companies
-        if company_id not in customers and company_id != found.get("domain twin")
-    ]
-    for company_id in non_customers:
+            members["low_adoption"].append(company_id)
+    for company_id in companies:
+        if company_id in customer_ids or company_id in twin_ids:
+            continue
         sequences = [tuple(row.get("stage") for row in deals[deal_id]) for deal_id in by_company.get(company_id, [])]
         if any(sequence == FORWARD_LOST for sequence in sequences):
-            found.setdefault("lost_opportunity", company_id)
+            members["lost_opportunity"].append(company_id)
         elif any(sequence == REGRESSION_STAGES for sequence in sequences):
-            found.setdefault("stage_regression", company_id)
+            members["stage_regression"].append(company_id)
+    assigned = {company_id for grouped in members.values() for company_id in grouped}
+    outsiders = [company_id for company_id in companies if company_id not in assigned]
     journey_domains = []
     for name in JOURNEYS:
-        company_id = found.get(name)
-        if not company_id:
-            continue
-        domain = latest(companies[company_id]).get("primary_domain")
-        journey_domains.append(domain)
-        if not domain:
-            add_defect(
-                defects, run, "distributions_and_edge_cases",
-                "Each journey company has its own non-null primary_domain.",
-                entity="hubspot.company", key=f"hubspot_company_id={company_id}", field="primary_domain", actual=None,
-            )
+        for company_id in members[name]:
+            domain = latest(companies[company_id]).get("primary_domain")
+            journey_domains.append(domain)
+            if not domain:
+                add_defect(
+                    defects, run, "distributions_and_edge_cases",
+                    "Each journey company has its own non-null primary_domain.",
+                    entity="hubspot.company", key=f"hubspot_company_id={company_id}", field="primary_domain", actual=None,
+                )
     if len(journey_domains) != len(set(journey_domains)):
         add_defect(
             defects, run, "distributions_and_edge_cases",
             "Journey companies do not share a primary_domain. The domain twin is the company that copies the new-business domain.",
             field="primary_domain", actual=journey_domains,
         )
-    return found
+    return members, outsiders
 
 
 def _customer_subscription_status(run, company_id, by_company, deals) -> str | None:
@@ -434,12 +446,18 @@ def _scenario_details(run: DatasetRun, defects: list[Defect], found: dict[str, s
     nb_domain = latest(companies[nb]).get("primary_domain")
     twin_domain = latest(companies[twin]).get("primary_domain")
     firm = _firm_for_domain(run, nb_domain)
-    if twin_domain != nb_domain or firm is None or latest(companies[twin]).get("hubspot_lifecycle_stage") != "sql":
+    twin_won = any(
+        row.get("emitted_event") == "opportunity_won"
+        for deal_id in by_company.get(twin, [])
+        for row in deals[deal_id]
+    )
+    if twin_domain != nb_domain or firm is None or latest(companies[twin]).get("hubspot_lifecycle_stage") != "sql" or twin_won:
         flags["Merged accounts"] = False
         add_defect(
             defects, run, "distributions_and_edge_cases",
             "One extra company copies the new-business primary_domain, uses a different hubspot_company_id, has no won deal, and uses sql. The Product firm uses the same domain.",
-            entity="hubspot.company", key=f"hubspot_company_id={twin}", field="primary_domain", actual=twin_domain,
+            entity="hubspot.company", key=f"hubspot_company_id={twin}", field="primary_domain",
+            actual="opportunity_won" if twin_won else twin_domain,
         )
     if not _regression_and_forward(deals, found, by_company):
         flags["Repeated stage changes"] = False
@@ -709,6 +727,11 @@ def _new_business_specific(run, defects, found, contacts, deals, by_company, cod
     for code, outcome in NB_USAGE:
         rows = by_code.get(code, [])
         if len(rows) != 1:
+            add_defect(
+                defects, run, "distributions_and_edge_cases",
+                "The new-business firm has one usage for each workflow code except case_analysis.",
+                entity="product.usage", key=f"workflow_code={code}", field="workflow_code", actual=len(rows),
+            )
             continue
         if code == "document_collection" and rows[0].get("work_unit_count") != maximum:
             add_defect(
