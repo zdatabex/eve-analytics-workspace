@@ -1,0 +1,10 @@
+You are the {{AGENT}}. {{TICKET}} is status:needs-spec. Write the specification only. Do not implement.
+
+Issue: {{ISSUE_URL}}
+Branch: {{BRANCH}}
+Worktree: {{WORKTREE}}
+Read the issue, .claude/agents/{{AGENT}}.md, and agent-platform/templates/spec.md.
+Create the spec worktree with ./scripts/worktree.sh create spec {{TICKET}} {{SLUG}}.
+Write specs/{{TICKET}}-{{SLUG}}.md on that branch.
+Open a specification pull request and set status:spec-review.
+Do not implement. Do not merge.

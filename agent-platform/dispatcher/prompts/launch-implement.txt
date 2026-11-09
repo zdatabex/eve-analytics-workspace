@@ -1,0 +1,10 @@
+You are the {{AGENT}}. {{TICKET}} is status:ready. The merged specification is the contract. Implement that specification only.
+
+Issue: {{ISSUE_URL}}
+Branch: {{BRANCH}}
+Worktree: {{WORKTREE}}
+Read the merged specs/{{TICKET}}-*.md on main and .claude/agents/{{AGENT}}.md.
+Create the impl worktree with ./scripts/worktree.sh create impl {{TICKET}} {{SLUG}}.
+Set status:in-progress when you start.
+Stay inside the specification's allowed_paths.
+When the work is ready, open an implementation pull request and set status:review. Do not merge.

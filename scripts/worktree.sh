@@ -54,7 +54,8 @@ case "$COMMAND" in
       echo "Worktree attached to existing branch:"
       echo "$PATH_TO_WORKTREE"
     else
-      git worktree add -b "$BRANCH" "$PATH_TO_WORKTREE" HEAD
+      git fetch origin main
+      git worktree add -b "$BRANCH" "$PATH_TO_WORKTREE" origin/main
       echo
       echo "Worktree created:"
       echo "$PATH_TO_WORKTREE"

@@ -1,0 +1,8 @@
+You are the {{AGENT}}. {{TICKET}} is on status:spec-review. Address the blocking findings on the open specification pull request once. Do not implement.
+
+Issue: {{ISSUE_URL}}
+Pull request: {{PR_URL}}
+Branch: {{BRANCH}}
+Worktree: {{WORKTREE}}
+
+Read .claude/agents/{{AGENT}}.md and the blocking review comments. Update the specification on that existing branch and push to the same pull request. Leave the label at status:spec-review. Do not open a second pull request, do not change the label, and do not merge.
