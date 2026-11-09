@@ -483,7 +483,7 @@ Rules:
 | `end_date` | date | no | Agreement end. Greater than or equal to `start_date`. | `contract.end_date` |
 | `observed_at` | timestamp | no | Observation time. | null. Downstream, a status, value, or term change starts a new contract version. |
 | `dealhub_quote_id` | string | no | The accepted quote. | Reference to the contract's quote. |
-| `hubspot_deal_id` | string | no | The won new-business deal. | Reference to the contract's opportunity. |
+| `hubspot_deal_id` | string | no | The deal whose observation emits `opportunity_won` with `opportunity_type` `new_business` and `stage` `closed_won`. | Reference to the contract's opportunity. |
 | `hubspot_company_id` | string | no | The firm. | Reference to the contract's account. |
 
 Relationships:
@@ -496,10 +496,10 @@ Events: none.
 
 Rules:
 
-- The cited deal is a `new_business` deal that has emitted `opportunity_won`. Expansion and renewal do not create a contract.
+- Contract creation is judged on the observation that emits `opportunity_won`. That observation has `opportunity_type` `new_business` and `stage` `closed_won`. The contract's `hubspot_deal_id` is that deal. A later observation of the same deal may change `opportunity_type` without removing the contract. A deal whose winning observation is `expansion` or `renewal` does not create a contract. The type that creates the contract is the type on that winning observation. A later deal observation, and the deal observation in effect at a later contract `observed_at`, leave that decision unchanged.
 - The cited quote is the accepted quote of that deal.
 - The company identifier matches the company on the cited deal and the cited quote.
-- A renewal may change `end_date` or `total_contract_value` on a later observation of the same `dealhub_contract_id`. That observation is not a second contract.
+- A later observation of the same `dealhub_contract_id` may change `total_contract_value` or `end_date` without removing the contract. That observation is not a second contract.
 
 ### Subscription
 
@@ -767,7 +767,7 @@ Rules:
 - Account `owner_name` on the company and deal `owner_name` are different fields. Both may be present and they may differ.
 - Subscription `seat_count` and the number of product users are different quantities.
 - A lead and an account are different source records. Conversion cites `hubspot_deal_id`. It does not rewrite the lead into a company.
-- New business produces one contract from one accepted quote and one or many subscriptions. Expansion and renewal keep the subscription and may update the existing contract. They do not create a contract.
+- The observation that emits `opportunity_won` produces one contract when that observation has `opportunity_type` `new_business` and `stage` `closed_won`, from one accepted quote and one or many subscriptions. The contract's `hubspot_deal_id` is that deal. A later observation of the same deal may change `opportunity_type`, and a later contract observation may change `total_contract_value` or `end_date`, without removing the contract. A deal whose winning observation is `expansion` or `renewal` keeps the subscription and may update the existing contract. It does not create a contract. The type that creates the contract is the type on that winning observation. A later deal observation, and the deal observation in effect at a later contract `observed_at`, leave that decision unchanged. `booking_type` equals `opportunity_type` on the deal observation in effect at `booked_at`.
 - One `lead_created` and one `opportunity_opened` exist for each lead and deal that exist. Won and lost are mutually exclusive. Churn is at most once per subscription. Renewals and expansions may repeat.
 - Canonical identity resolution, survivorship, and effective-dated versions are downstream of these contracts. Source duplicates remain separate source identifiers.
 
