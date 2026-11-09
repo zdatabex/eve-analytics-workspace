@@ -41,7 +41,7 @@ DealHub owns quotes, contracts, subscriptions, and bookings. It does not create 
 | Subscription | `dealhub_subscription_id` | `subscription` | `subscription_number`, `status`, `plan_code`, `seat_count`, `recurring_amount`, `billing_frequency`, `term_start`, and `term_end`. |
 | Booking | `dealhub_booking_id` | `booking` | `booking_number`, `booking_type`, `booking_amount`, and `booked_at`. |
 
-DealHub subscription signals choose `subscription_renewed`, `subscription_expanded`, and `subscription_churned`.
+DealHub subscription signals choose `subscription_renewed`, `subscription_expanded`, and `subscription_churned`. Durable status stays `pending`, `active`, or `churned`, and can remain `active` across terms. A renewal or expansion observation fires its event even when status is unchanged. A change to term, amount, or seats still opens a Type 2 subscription version.
 
 A quote references the HubSpot deal and the HubSpot company. A contract references the accepted quote, the new-business HubSpot deal, and the HubSpot company. A subscription references the DealHub contract and the HubSpot company. A booking references the HubSpot company, the HubSpot deal, the DealHub contract, and the DealHub subscription. Those references resolve through the source identifiers already mapped to canonical foreign keys.
 
@@ -71,7 +71,7 @@ Product owns the firm as a tenant, the product login, the workflow catalog, usag
 | Usage | `product_usage_source_id` | `product_usage` | `occurred_at`, `work_unit_count`, and the links to user, firm, and workflow. |
 | Outcome | `product_outcome_source_id` | `product_outcome` | `occurred_at`, `outcome_type`, and the link to the usage event. |
 
-Product wins the product user. The surviving canonical identifier is `product_user_id`. Email may set `contact_id` when a surviving contact has the same email and the same account. Product does not create that contact.
+Product wins the product user. The surviving canonical identifier is `product_user_id`. The same `email_normalized` matches one surviving product user across firms. A login at a second firm records a Type 2 change of `account_id` on that `product_user_id`. Email may set `contact_id` when a surviving contact has the same email and the same account. Product does not create that contact.
 
 The account's first product outcome chooses `adoption_reached`. The canonical model records that event. Product does not send an adoption score.
 
@@ -92,8 +92,8 @@ The account's first product outcome chooses `adoption_reached`. The canonical mo
 | `customer_converted` | Derived from the account's first `opportunity_won`. |
 | `adoption_reached` | Derived from the account's first Product outcome, under the working grain in `decisions.md`. |
 | `product_usage` | Each Product usage observation. Stored on `product_usage`, not on `lifecycle_event`. |
-| `subscription_renewed` | DealHub subscription status becomes `renewed`. |
-| `subscription_expanded` | DealHub subscription status becomes `expanded`. |
+| `subscription_renewed` | Each DealHub renewal observation, including when subscription status stays `active`. |
+| `subscription_expanded` | Each DealHub expansion observation, including when subscription status stays `active`. |
 | `subscription_churned` | DealHub subscription status becomes `churned`. |
 
 ## Canonical attributes with no source owner
@@ -102,7 +102,7 @@ These attributes are derived in the canonical model from the events and commerci
 
 | Canonical attribute or event | Rule |
 |---|---|
-| `account.commercial_status` | `prospect` before `customer_converted`; `customer` after `customer_converted` while any subscription is `pending`, `active`, `renewed`, or `expanded`; `former_customer` after `customer_converted` when every subscription is `churned`. A later win returns the account to `customer`. |
+| `account.commercial_status` | `prospect` before `customer_converted`; `customer` after `customer_converted` while any subscription is `pending` or `active`; `former_customer` after `customer_converted` when every subscription is `churned`. A later win returns the account to `customer`. Renewal and expansion leave subscription status `active`. |
 | `customer_converted` | The account's first `opportunity_won`. The customer identifier is `account_id`. |
 | `adoption_reached` | The account's first `product_outcome`, under the working grain in `decisions.md`. |
 
@@ -116,7 +116,7 @@ These attributes are derived in the canonical model from the events and commerci
 | Opportunity | The same `hubspot_deal_id`. | HubSpot. DealHub attaches quotes, contracts, and bookings to that deal. | `opportunity_id`. A second canonical opportunity later found to be the same deal keeps its source identifier and `surviving_opportunity_id`. |
 | Customer | A firm that has `customer_converted`. | The customer is the account. HubSpot's lifecycle value stays on `hubspot_lifecycle_stage`. | `account_id`. |
 | Subscription | The same `dealhub_subscription_id`. | DealHub. | `subscription_id`. |
-| Product user | The same `product_user_source_id`, or the same `email_normalized` at the same account. | Product. | `product_user_id`. |
+| Product user | The same `product_user_source_id`, or the same `email_normalized` across accounts. | Product. | `product_user_id`. |
 
 A lead and a customer are not the same subject. Conversion links `lead_id` to `opportunity_id` and the opportunity to `account_id`. Both identifiers remain.
 
@@ -136,6 +136,7 @@ A firm, a contact, and a product user are not the same subject. A one-person fir
 | The same `dealhub_subscription_id` arrives twice. | One subscription. |
 | Two subscriptions already exist for that same DealHub id. | The earlier `subscription_id` survives. The later row keeps the source identifier and `surviving_subscription_id`. |
 | Two product users at one firm share an email. | The earlier `product_user_id` survives. The later row keeps `product_user_source_id` and `surviving_product_user_id`. |
+| Two product users at different firms share an email. | The earlier `product_user_id` survives. The later row keeps `product_user_source_id` and `surviving_product_user_id`. The account change is a Type 2 version of `account_id` on that surviving product user, not a second surviving product user. |
 | A product user email matches a contact at the same firm. | The contact and the product user both remain. `product_user.contact_id` links them. |
 | A converted lead and the customer account. | Both remain. The lead is not a duplicate of the account. |
 | Same firm name and different domains, or either side has no domain. | Two accounts. Name alone does not match across systems. |

@@ -35,7 +35,7 @@ Foreign keys:
 | `practice_focus` | The firm's principal plaintiff practice, such as personal injury or mass tort. The catalog is open. | Pipeline and retention. |
 | `icp_fit` | Whether the firm fits the ideal customer profile: `in_icp` or `out_of_icp`. | Pipeline. |
 | `owner_name` | The sales owner of the firm relationship. | Pipeline. |
-| `commercial_status` | Canonical commercial state: `prospect` before `customer_converted`; `customer` after `customer_converted` while any subscription is `pending`, `active`, `renewed`, or `expanded`; `former_customer` after `customer_converted` when every subscription is `churned`. A later win returns the account to `customer`. | Retention. It is also the customer state of the account. |
+| `commercial_status` | Canonical commercial state: `prospect` before `customer_converted`; `customer` after `customer_converted` while any subscription is `pending` or `active`; `former_customer` after `customer_converted` when every subscription is `churned`. A later win returns the account to `customer`. Renewal and expansion leave subscription status `active`. | Retention. It is also the customer state of the account. |
 | `hubspot_lifecycle_stage` | The lifecycle value stored in HubSpot. It is retained for reconciliation. | Descriptive. Canonical analysis uses `commercial_status` and lifecycle events. |
 | `hubspot_company_id` | HubSpot's identifier for the company. | Identity. |
 | `product_firm_id` | The Product system's identifier for the firm. | Identity. |
@@ -228,7 +228,7 @@ Uniqueness and referential integrity:
 
 ## subscription
 
-A subscription is one recurring commercial entitlement under one contract. It is the entity whose amount, term, and status carry ARR and retention history. Expansion and renewal keep the same subscription and open a new effective-dated version. A second purchased product is a second subscription.
+A subscription is one recurring commercial entitlement under one contract. It is the entity whose amount, term, and status carry ARR and retention history. Expansion and renewal keep the same subscription. Durable status stays `active` across terms. Each renewal observation records `subscription_renewed`, and each expansion observation records `subscription_expanded`, including when status is unchanged. A change to term, amount, or seats opens a new effective-dated version. A second purchased product is a second subscription.
 
 Business grain: one instance of a subscription, which is one recurring entitlement.
 
@@ -247,7 +247,7 @@ Foreign keys:
 | Attribute | Business definition | Analysis that needs it |
 |---|---|---|
 | `subscription_number` | The human-readable subscription number. | Identity. |
-| `status` | The commercial state: `pending`, `active`, `renewed`, `expanded`, or `churned`. | ARR and retention. `renewed`, `expanded`, and `churned` choose subscription events. |
+| `status` | The durable commercial state: `pending`, `active`, or `churned`. Status stays `active` across renewals and expansions. | ARR and retention. `churned` chooses `subscription_churned`. A renewal or expansion observation chooses its event even when status is unchanged. |
 | `plan_code` | The commercial plan sold to the firm. The catalog is open. | ARR and adoption segmentation. |
 | `seat_count` | The number of seats on the subscription. | ARR context. It is an observed commercial quantity, not a count of product users. |
 | `recurring_amount` | The observed recurring fee for the subscription. | ARR. Later ARR math uses this amount with `billing_frequency`. The formula is later metric work. |
@@ -424,15 +424,15 @@ Uniqueness and referential integrity:
 
 ## product_user
 
-A product user is a person who can sign in to the product for one firm. The same human may also be a contact. The two stay separate because HubSpot and the Product system issue different identifiers and because a user can exist before sales knows the person.
+A product user is one product login. The current version belongs to exactly one firm. The same human may also be a contact. The two stay separate because HubSpot and the Product system issue different identifiers and because a user can exist before sales knows the person. The same `email_normalized` at another firm is the same product user. That match records a Type 2 change of `account_id` on the surviving `product_user_id`. It does not create a second surviving product user.
 
-Business grain: one instance of a product user, which is one product login at a firm.
+Business grain: one instance of a product user, which is one product login. The firm is the account on the current version, not a second identity.
 
 The product user dimension uses a different grain. One row represents one effective-dated version of one product user, from effective_start inclusive until effective_end exclusive, with exactly one current row. That row grain is defined in `decisions.md`.
 
 Primary key: `product_user_id`. The primary key is a surrogate. The Product system's user id is a source identifier, and email can change.
 
-Business key: `email_normalized`. It is unique among surviving product users when it is present. It is not the primary key because email can change and because the product login id is the source identifier.
+Business key: `email_normalized`. It is unique among surviving product users across accounts when it is present. It is not the primary key because email can change and because the product login id is the source identifier.
 
 Foreign keys:
 
@@ -442,7 +442,7 @@ Foreign keys:
 
 | Attribute | Business definition | Analysis that needs it |
 |---|---|---|
-| `email_normalized` | The login email, used to match a contact. | Identity and adoption. |
+| `email_normalized` | The login email. It matches another product user across accounts. It matches a contact only when the account is the same. | Identity and adoption. |
 | `status` | The login state: `invited`, `active`, or `inactive`. | Adoption. Active users are the adoption denominator. |
 | `product_user_source_id` | The Product system's identifier for the user. | Identity. |
 
@@ -450,7 +450,8 @@ Uniqueness and referential integrity:
 
 - `product_user_id` is unique.
 - `product_user_source_id` is unique across all product user rows when it is present.
-- `email_normalized` is unique among surviving product users when it is present.
+- `email_normalized` is unique among surviving product users across accounts when it is present. A second source login with the same email, including at a different firm, is not a second surviving product user.
+- A cross-account match on `email_normalized` records a Type 2 change of `account_id` on the surviving `product_user_id`.
 - `contact_id` is unique when it is present.
 - The contact, when present, has the same email and the same account.
 - `surviving_product_user_id` references a surviving product user. A product user does not reference itself.
@@ -581,7 +582,7 @@ Uniqueness and referential integrity:
 - One `opportunity_opened` exists for an opportunity. Open-stage moves are many `opportunity_stage_changed` rows. The opportunity then has one `opportunity_won` or one `opportunity_lost`.
 - One `customer_converted` exists for an account. It is the account's first `opportunity_won`.
 - One `adoption_reached` exists for an account under the working assumption in `decisions.md`.
-- One `subscription_churned` exists for a subscription. `subscription_renewed` and `subscription_expanded` may each occur many times.
+- One `subscription_churned` exists for a subscription. `subscription_renewed` and `subscription_expanded` may each occur many times. Consecutive renewals each add a `subscription_renewed` row while status remains `active`. Consecutive expansions each add a `subscription_expanded` row the same way. The event does not require the status value to change.
 
 ## Proposed facts and dimensions
 
@@ -628,8 +629,8 @@ The stage and status values that choose an event are the working vocabulary. `de
 | `customer_converted` | One row represents the first win for one account. | `account` | `occurred_at` of that first win | `customer` | The account's first `opportunity_won`. The canonical customer identifier is `account_id`. |
 | `adoption_reached` | One row represents the first time one account reaches adoption. | `account` | `occurred_at` of the first `product_outcome` | `adoption` | The account's first `product_outcome`, of any outcome type. |
 | `product_usage` | One row represents one usage of one AI workflow by one product user. | `product_usage` | `occurred_at` | `adoption` | Each Product usage observation. |
-| `subscription_renewed` | One row represents one renewal of one subscription. | `subscription` | `occurred_at` | `renewal` | Subscription status becomes `renewed`. |
-| `subscription_expanded` | One row represents one expansion of one subscription. | `subscription` | `occurred_at` | `renewal` | Subscription status becomes `expanded`. |
+| `subscription_renewed` | One row represents one renewal of one subscription. | `subscription` | `occurred_at` | `renewal` | Each renewal observation, including when status stays `active`. |
+| `subscription_expanded` | One row represents one expansion of one subscription. | `subscription` | `occurred_at` | `renewal` | Each expansion observation, including when status stays `active`. |
 | `subscription_churned` | One row represents one churn of one subscription. | `subscription` | `occurred_at` | `renewal` | Subscription status becomes `churned`. |
 
 Required foreign keys on `lifecycle_event`:
@@ -650,6 +651,6 @@ Required foreign keys on `lifecycle_event`:
 | `subscription_expanded` | `subscription` | Present | Absent | Absent | Present |
 | `subscription_churned` | `subscription` | Present | Absent | Absent | Present |
 
-Lead status `working` does not choose an event. Subscription statuses `pending` and `active` do not choose a lifecycle event. The new-business booking and the subscription's first effective-dated row record the commercial start. Product user status does not choose a lifecycle event; it is history on the product user dimension.
+Lead status `working` does not choose an event. Subscription statuses `pending` and `active` do not by themselves choose a lifecycle event. A renewal observation fires `subscription_renewed`, and an expansion observation fires `subscription_expanded`, on every such observation, including when status stays `active`. Consecutive renewals each fire `subscription_renewed`. Consecutive expansions each fire `subscription_expanded`. Term, amount, and seat changes still open a Type 2 subscription version. `churned` chooses `subscription_churned`. The new-business booking and the subscription's first effective-dated row record the commercial start. Product user status does not choose a lifecycle event; it is history on the product user dimension.
 
 A later win for an account that was a `former_customer` is another `opportunity_won`. It does not create a second `customer_converted`. `commercial_status` returns to `customer` through a new effective-dated account row.

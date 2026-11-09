@@ -34,7 +34,7 @@ The business grain of each entity stays one instance of that entity, as stated i
 
 Source identifiers are immutable. A bad identifier is corrected as a data fix on the row that stores it. It does not open a Type 2 version.
 
-`subscription.contract_id` is fixed at creation. Renewal and expansion keep the subscription and the contract. They open a new subscription version when the term, status, or recurring amount changes, and they can open a new contract version when the contract end date or value changes.
+`subscription.contract_id` is fixed at creation. Renewal and expansion keep the subscription and the contract. Durable status stays `active` across terms. Each renewal or expansion observation fires its lifecycle event even when status is unchanged. A change to term, recurring amount, or seats opens a new subscription version. A change to status, including the move to `churned`, also opens a version. A renewal can open a new contract version when the contract end date or value changes.
 
 ## Identity resolution
 
@@ -49,11 +49,11 @@ Match keys:
 - Firm across HubSpot and Product: equal `primary_domain`. Missing domain, or unequal domains, does not match, including when the firm names are equal.
 - Contact inside HubSpot: equal `email_normalized`.
 - Product user to contact: equal `email_normalized` and the same account.
-- Product user to product user: equal `product_user_source_id`, or equal `email_normalized` at the same account.
+- Product user to product user: equal `product_user_source_id`, or equal `email_normalized` with no account requirement.
 
 The surviving canonical identifiers are `account_id`, `contact_id`, and `product_user_id`. A non-surviving duplicate keeps its source identifier and its survivor link: `surviving_account_id`, `surviving_contact_id`, or `surviving_product_user_id`.
 
-A contact belongs to one firm at a time. A move to another firm opens a new contact version. A product user move opens a new product user version. Email history is kept the same way.
+A contact belongs to one firm at a time. A move to another firm opens a new contact version. A product user belongs to one firm at a time. A move to another firm opens a new version of the same product user and changes `account_id`. A second source login with the same `email_normalized` at a different firm uses that same rule. It does not create a second surviving product user. `email_normalized` stays unique among surviving product users across accounts. Email history is kept the same way.
 
 ### Lead and customer
 
@@ -135,7 +135,7 @@ Referential order: campaigns and AI workflows, then firms that share one domain 
 - Source identifier: `dealhub_subscription_id`.
 - Mapping attributes: `subscription_number`, `status`, `plan_code`, `seat_count`, `recurring_amount`, `billing_frequency`, `term_start`, `term_end`, `observed_at`.
 - Relationships: `dealhub_contract_id`, `hubspot_company_id`.
-- Events: `subscription_renewed`, `subscription_expanded`, and `subscription_churned`. `pending` and `active` are observations. They do not emit those three events.
+- Events: `subscription_renewed` on every renewal observation, `subscription_expanded` on every expansion observation, and `subscription_churned` when status becomes `churned`. Durable status is `pending`, `active`, or `churned` and stays `active` across terms. A renewal or expansion fires even when status is unchanged. Consecutive renewals each emit `subscription_renewed`. Consecutive expansions each emit `subscription_expanded`. `pending` and `active` do not by themselves emit those events. A change to term, recurring amount, or seats still opens a Type 2 subscription version.
 
 ### DealHub booking
 
@@ -177,7 +177,7 @@ Referential order: campaigns and AI workflows, then firms that share one domain 
 - Source identifier: `product_user_source_id`.
 - Mapping attributes: `email_normalized`, `status`, `observed_at`.
 - Relationships: `product_firm_id`.
-- Events: none. Status changes are observations for the product user dimension.
+- Events: none. Status changes are observations for the product user dimension. The same `email_normalized` at a different `product_firm_id` is the same product user. That match opens a Type 2 change of `account_id` on the surviving `product_user_id`.
 
 ### Product AI workflow
 
@@ -248,12 +248,12 @@ This vocabulary is unresolved. The event rules in `entities.md` use it as the wo
 | Account commercial status | `prospect`, `customer`, `former_customer` |
 | Quote status | `draft`, `sent`, `accepted`, `rejected`, `expired` |
 | Contract status | `active`, `expired`, `terminated` |
-| Subscription status | `pending`, `active`, `renewed`, `expanded`, `churned` |
+| Subscription status | `pending`, `active`, `churned`. Status stays `active` across renewals and expansions. Renewal and expansion are observations, not durable status values. |
 | Product user status | `invited`, `active`, `inactive` |
 | Billing frequency | `monthly`, `quarterly`, `annual` |
 | Outcome type | `draft_completed`, `review_accepted`, `exported` |
 
-`working`, `pending`, and `active` are included so the current row has a status. They do not each choose a lifecycle event. The choosing values are the ones in the event catalog in `entities.md`.
+`working`, `pending`, and `active` are included so the current row has a status. They do not each choose a lifecycle event. Renewal and expansion observations choose `subscription_renewed` and `subscription_expanded` even when status stays `active`. The other choosing values are the ones in the event catalog in `entities.md`.
 
 ### Adoption grain
 
