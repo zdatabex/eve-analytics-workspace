@@ -134,7 +134,7 @@ rules:
   - 'subscription_number is stable across observations of the same dealhub_subscription_id and unique across different dealhub_subscription_id values.'
   - 'dealhub_contract_id is stable across observations of this subscription. hubspot_company_id matches the company on the cited contract.'
   - 'term_end is greater than or equal to term_start. seat_count minimum is 0.'
-  - 'Renewals and expansions may repeat. subscription_churned occurs once per subscription.'
+  - 'Renewals and expansions may repeat. subscription_churned occurs at most once per subscription.'
   - 'When a relationship value is present, it equals a source identifier defined by the referenced contract in the same dataset. Relationship fields store the parent source identifier. They do not embed the parent record.'
   - 'History is observation. A different payload at an existing observation_key is invalid. A business change is a new observed_at, and therefore a new observation_key. A replay is a new delivery_id for an existing observation_key whose business attributes match.'
   - 'Source identifiers are opaque non-empty strings. DealHub identifiers are expected to be prefixed strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
