@@ -1,7 +1,7 @@
 version: 1
 
 project:
-  name: eve-gtm-platform
+  name: eve-analytics-workspace
   architecture: modular-monorepo
 
 components:
@@ -14,6 +14,13 @@ components:
     path: data-generation
     type: application
     independently_deployable: true
+
+  - name: orchestration
+    path: orchestration
+    type: workflow-orchestration
+    independently_deployable: true
+    depends_on:
+      - contracts
 
   - name: dbt
     path: warehouse/dbt

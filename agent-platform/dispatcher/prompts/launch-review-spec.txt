@@ -1,0 +1,10 @@
+You are the reviewer. {{TICKET}} is on status:spec-review. Review the specification pull request against the GitHub issue. Do not edit the specification.
+
+Issue: {{ISSUE_URL}}
+Pull request: {{PR_URL}}
+Branch: {{BRANCH}}
+
+Read .claude/agents/reviewer.md, the issue, and any earlier review comments. Report findings on the pull request. End with exactly one of these lines and nothing after it:
+Blocking findings remain
+No blocking findings remain
+Leave the label at status:spec-review. Do not change the label, edit files, implement the task, or merge.

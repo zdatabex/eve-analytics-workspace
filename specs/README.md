@@ -4,39 +4,49 @@ This directory contains version-controlled specifications for work tracked in Gi
 
 ## Purpose
 
-GitHub Issues is the source of truth for backlog management, including priorities, assignments, dependencies, and task status.
+GitHub Issues are the source of truth for task status, assignment, priority, and dependencies. Status is a single `status:` label. See `docs/development/agent-workflow.md`.
 
-Specification files provide agents with the detailed context and instructions needed to execute individual tasks.
+Specification files are the implementation contract for an approved issue. The owning agent writes the specification during `status:needs-spec` and implements it only after that specification has merged and the issue is `status:ready`.
 
 ## Organization
 
-Each task that requires a specification has one Markdown file:
+Each task has one Markdown file:
 
 ```text
 specs/
 ├── README.md
-├── GTM-001-design-canonical-data-model.md
-├── GTM-002-define-source-schemas.md
-└── GTM-003-implement-data-generators.md
+├── DATA-001-design-canonical-data-model.md
+├── DATA-002-define-source-schemas.md
+└── DATA-003-implement-data-generators.md
 ```
 
-The filename should begin with the corresponding GitHub Issue ID.
+The filename begins with the issue id, using the `DATA-` prefix, followed by a short slug.
 
-## Specification Format
+Copy `agent-platform/templates/spec.md` when creating a specification.
+
+## Specification format
 
 Each file uses Markdown with YAML frontmatter.
 
-The frontmatter identifies the task and provides execution metadata, such as:
+The frontmatter identifies the task:
 
-- `id`: GitHub Issue ID
+- `id`: Issue id, such as `DATA-123`
 - `title`: Task title
 - `type`: Task category
-- `status`: Execution readiness
-- `agent`: Primary responsible agent
+- `agent`: The one owning agent
+- `skills`: Skills required for the task
 - `priority`: Task priority
 - `components`: Affected project components
-- `dependencies`: Prerequisite tasks
+- `dependencies`: Prerequisite issue ids
 - `requires_approval`: Whether human approval is required
+- `allowed_paths`: Paths the implementation may change
+- `excluded_paths`: Paths the implementation must not change
+- `contracts`: Whether shared contracts change, and which ones
+- `testing`: Component, integration, and end-to-end test flags
+- `environment`: Isolated schema settings
+- `delivery`: Pull request, human approval, and deployment flags
+
+The frontmatter has no `status` field. GitHub labels are the only status.
 
 The Markdown body describes:
 
@@ -46,22 +56,23 @@ The Markdown body describes:
 - Deliverables
 - Constraints
 - Acceptance criteria
-- Execution instructions
+- Execution notes
 
-## Agent Workflow
+## Phases
 
-1. Find the assigned task in GitHub Issues.
-2. Read its corresponding specification.
-3. Review relevant project documentation, standards, and existing implementation.
-4. Confirm dependencies and approval requirements.
-5. Execute the task in an isolated Git worktree.
-6. Validate deliverables against the acceptance criteria.
-7. Submit changes through a pull request.
+1. On `status:needs-spec`, the owning agent writes this specification and opens a pull request. The agent does not implement the task.
+2. The reviewer checks the specification against the issue. The label stays `status:spec-review`. When changes are requested, the owning agent updates the specification on the open pull request and does not implement. A human approves and merges it. A human rejects it by closing the pull request without merging and setting `status:blocked`.
+3. On `status:ready` or `status:in-progress`, the owning agent implements the merged specification in an isolated worktree. On `status:review`, requested changes stay on the open implementation pull request.
+
+The full sequence, label setters, and ownership rules are in `docs/development/agent-workflow.md`.
 
 ## Guidelines
 
-- GitHub Issues remains the authoritative backlog.
-- Each substantial task should have one corresponding specification file.
-- Keep specifications focused on requirements and expected outcomes, not implementation details that agents should determine.
-- Update specifications through pull requests when approved requirements or decisions change.
+- GitHub Issues remain the authoritative backlog.
+- Each task has one specification file.
+- Keep specifications focused on requirements and expected outcomes, not implementation details the owning agent should determine.
+- Update specifications through pull requests when approved requirements change.
 - Do not create separate backlogs for individual agents.
+- One issue has one `agent`. Work for another domain agent becomes a dependent issue.
+- The owning agent may edit `contracts/` only when `contracts.changes_required` is true.
+- More than one entry in `components` requires integration tests.

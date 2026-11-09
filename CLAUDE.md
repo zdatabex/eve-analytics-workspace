@@ -28,19 +28,21 @@ See `workspace.yaml` for component definitions and dependencies.
 
 ## Task Management
 
-GitHub Issues is the source of truth for backlog management.
+GitHub Issues are the source of truth for task status, assignment, priority, and dependencies. Status is a single `status:` label. See `docs/development/agent-workflow.md`.
 
-For tasks with detailed requirements:
+1. A human opens an issue with the business need, scope, and acceptance criteria.
+2. The human adds `status:needs-spec`. The dispatcher names the owning agent.
+3. The owning agent writes `specs/DATA-*.md` and opens a specification pull request. The agent does not implement.
+4. The reviewer checks the specification. The label stays `status:spec-review`. When changes are requested, the owning agent updates the open specification pull request and does not implement. A human approves and merges it, or rejects it by closing the pull request without merging and setting `status:blocked`.
+5. The issue moves to `status:ready` only after the specification pull request merges.
+6. The owning agent implements the merged specification in an isolated worktree and isolated schema when the specification requires one.
+7. The agent validates acceptance criteria and tests, then opens an implementation pull request.
+8. The reviewer checks the implementation. The label stays `status:review`. When changes are requested, the owning agent updates the open implementation pull request. A human approves and merges it, or rejects it by closing the pull request without merging and setting `status:blocked`.
+9. After required checks pass, a human closes the issue.
 
-1. Locate the corresponding GitHub Issue.
-2. Read its specification in `specs/`.
-3. Review relevant architecture and component documentation.
-4. Confirm dependencies, scope, and approval requirements.
-5. Implement changes within the assigned component boundaries.
-6. Validate acceptance criteria and tests.
-7. Submit changes through a pull request.
+Specifications use Markdown with YAML frontmatter. The template is `agent-platform/templates/spec.md`.
 
-Specifications use Markdown with YAML frontmatter.
+Do not deploy unless the specification sets `delivery.deployment_required` and a human approves the deployment.
 
 Do not create separate agent backlogs or duplicate task tracking
 inside the repository.
