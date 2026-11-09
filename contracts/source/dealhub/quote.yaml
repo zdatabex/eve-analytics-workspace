@@ -1,0 +1,94 @@
+id: dealhub.quote
+title: 'DealHub quote'
+source_system: dealhub
+source_entity: quote
+canonical_entity: quote
+history: observation
+grain: 'One row represents one observation of one DealHub quote at one observed_at.'
+source_identifier:
+  - dealhub_quote_id
+observation_key:
+  - dealhub_quote_id
+  - observed_at
+fields:
+  - name: dealhub_quote_id
+    type: string
+    nullable: false
+    maps_to: quote.dealhub_quote_id
+    description: 'Opaque non-empty source identifier issued by the source system. Not a canonical surrogate key. The contract accepts any non-empty string and does not reject a value solely for its shape. DealHub identifiers are expected to be prefixed strings. That shape is an assumption, not a rejection rule.'
+  - name: quote_number
+    type: string
+    nullable: false
+    maps_to: quote.quote_number
+    description: 'Required document number. Stable across observations of the same source identifier and unique across different source identifiers of this entity. A required string is present and non-empty.'
+  - name: status
+    type: enum
+    nullable: false
+    maps_to: quote.status
+    allowed_values:
+      - draft
+      - sent
+      - accepted
+      - rejected
+      - expired
+    description: 'Quote status. No other value is valid.'
+  - name: quoted_amount
+    type: decimal
+    nullable: true
+    maps_to: quote.quoted_amount
+    description: 'Proposal amount. Not bookings and not ARR. Non-negative base-10 amount in US dollars with at most two fraction digits. The contract forbids a binary float. There is no currency field. A missing value is null, not an empty string. quoted_amount may be null while the quote is draft.'
+  - name: observed_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'Observation time. ISO-8601 timestamp in UTC. Part of the observation key with dealhub_quote_id. Downstream, a status or amount change starts a new quote version. The source row is not that canonical version.'
+  - name: hubspot_deal_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The deal being proposed. A required string is present and non-empty. Reference to the quote opportunity.'
+  - name: hubspot_company_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The firm. A required string is present and non-empty. Reference to the quote account. It is the same company as the cited deal.'
+ingestion:
+  - name: source_system
+    type: enum
+    nullable: false
+    maps_to: null
+    allowed_values:
+      - dealhub
+    description: 'Platform delivery metadata. The value equals the source_system of this file. The platform vocabulary is hubspot, dealhub, marketing, or product. This field is not a canonical business attribute and does not open a canonical Type 2 version by itself. It is not part of observation_key.'
+  - name: delivery_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The extraction batch. A required string is present and non-empty. Many rows may share one delivery_id. A replay uses a new delivery_id and the same business attributes. Not a canonical business attribute and not part of observation_key.'
+  - name: ingested_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'When this delivery was accepted. ISO-8601 timestamp in UTC. It may be later than observed_at, occurred_at, or booked_at. Late delivery is valid. Not a canonical business attribute and not part of observation_key.'
+relationships:
+  - field: hubspot_deal_id
+    references: hubspot.deal.hubspot_deal_id
+    required: true
+    cardinality: 'Many quotes may cite one deal.'
+  - field: hubspot_company_id
+    references: hubspot.company.hubspot_company_id
+    required: true
+    cardinality: 'Many quotes may cite one company.'
+events: []
+rules:
+  - 'A quote does not create an opportunity.'
+  - 'quoted_amount may be null while the quote is draft. A quote cited by a contract has status accepted and a non-null quoted_amount.'
+  - 'quote_number is stable across observations of the same dealhub_quote_id and unique across different dealhub_quote_id values.'
+  - 'hubspot_company_id is the same company as the cited deal.'
+  - 'quoted_amount stays on this contract. It is not the HubSpot amount, the contract value, the booking amount, or recurring_amount.'
+  - 'Status and amount changes are observations. This contract emits no lifecycle signal.'
+  - 'When a relationship value is present, it equals a source identifier defined by the referenced contract in the same dataset. Relationship fields store the parent source identifier. They do not embed the parent record.'
+  - 'History is observation. A different payload at an existing observation_key is invalid. A business change is a new observed_at, and therefore a new observation_key. A replay is a new delivery_id for an existing observation_key whose business attributes match.'
+  - 'Source identifiers are opaque non-empty strings. DealHub identifiers are expected to be prefixed strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
+  - 'source_system, delivery_id, and ingested_at are platform delivery metadata. They are not canonical business attributes, they do not open a canonical Type 2 version by themselves, and they are not part of observation_key. source_system equals dealhub. A replay uses a new delivery_id and the same business attributes. ingested_at may be later than the business timestamps on the row. Late delivery is valid.'
+  - 'This contract does not contain canonical surrogate keys, surviving_account_id, surviving_contact_id, surviving_lead_id, surviving_opportunity_id, surviving_subscription_id, surviving_product_user_id, commercial_status, effective_start, effective_end, is_current, customer_converted, adoption_reached, or a lifecycle_event payload. It does not contain calculated ARR, net retention, pipeline coverage, win rate, or an adoption score, and it does not copy an amount from another source entity.'

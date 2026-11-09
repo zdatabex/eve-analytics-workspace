@@ -1,0 +1,103 @@
+id: hubspot.activity
+title: 'HubSpot activity'
+source_system: hubspot
+source_entity: activity
+canonical_entity: activity
+history: immutable
+grain: 'One row represents one sales activity.'
+source_identifier:
+  - hubspot_activity_id
+observation_key:
+  - hubspot_activity_id
+fields:
+  - name: hubspot_activity_id
+    type: string
+    nullable: false
+    maps_to: activity.hubspot_activity_id
+    description: 'Opaque non-empty source identifier issued by the source system. Not a canonical surrogate key. The contract accepts any non-empty string and does not reject a value solely for its shape. HubSpot identifiers are expected to be numeric strings. That shape is an assumption, not a rejection rule.'
+  - name: activity_type
+    type: enum
+    nullable: false
+    maps_to: activity.activity_type
+    allowed_values:
+      - call
+      - email
+      - meeting
+    description: 'Activity type. No other value is valid.'
+  - name: subject
+    type: string
+    nullable: true
+    maps_to: activity.subject
+    description: 'Short description. Open text. A missing value is null, not an empty string.'
+  - name: occurred_at
+    type: timestamp
+    nullable: false
+    maps_to: activity.occurred_at
+    description: 'When the interaction happened. ISO-8601 timestamp in UTC.'
+  - name: hubspot_company_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Account parent. At least one parent is present. A missing value is null, not an empty string.'
+  - name: hubspot_contact_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Contact parent. At least one parent is present. A missing value is null, not an empty string.'
+  - name: hubspot_lead_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Lead parent. At least one parent is present. A missing value is null, not an empty string.'
+  - name: hubspot_deal_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Opportunity parent. At least one parent is present. A missing value is null, not an empty string.'
+ingestion:
+  - name: source_system
+    type: enum
+    nullable: false
+    maps_to: null
+    allowed_values:
+      - hubspot
+    description: 'Platform delivery metadata. The value equals the source_system of this file. The platform vocabulary is hubspot, dealhub, marketing, or product. This field is not a canonical business attribute and does not open a canonical Type 2 version by itself. It is not part of observation_key.'
+  - name: delivery_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The extraction batch. A required string is present and non-empty. Many rows may share one delivery_id. A replay uses a new delivery_id and the same business attributes. Not a canonical business attribute and not part of observation_key.'
+  - name: ingested_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'When this delivery was accepted. ISO-8601 timestamp in UTC. It may be later than observed_at, occurred_at, or booked_at. Late delivery is valid. Not a canonical business attribute and not part of observation_key.'
+relationships:
+  - field: hubspot_company_id
+    references: hubspot.company.hubspot_company_id
+    required: false
+    cardinality: 'Many activities may cite one company. At least one parent field is present.'
+  - field: hubspot_contact_id
+    references: hubspot.contact.hubspot_contact_id
+    required: false
+    cardinality: 'Many activities may cite one contact. At least one parent field is present.'
+  - field: hubspot_lead_id
+    references: hubspot.lead.hubspot_lead_id
+    required: false
+    cardinality: 'Many activities may cite one lead. At least one parent field is present.'
+  - field: hubspot_deal_id
+    references: hubspot.deal.hubspot_deal_id
+    required: false
+    cardinality: 'Many activities may cite one deal. At least one parent field is present.'
+events: []
+rules:
+  - 'History is immutable. observation_key is hubspot_activity_id. The contract has no observed_at. A correction or a distinct event is a new hubspot_activity_id. A second delivery of an existing identifier is a replay only when the business attributes match. A different payload does not rewrite the event.'
+  - 'The row is the activity. It does not emit a lifecycle event and it has no observed_at and no emitted_event.'
+  - 'At least one parent is present. Omitting an optional parent is valid. The contract does not require all four.'
+  - 'When the activity includes hubspot_company_id and another parent that has a company, the company identifiers agree. The company of the other parent comes from the parent observation in effect at occurred_at. A deal has a company. A contact or a lead has a company when hubspot_company_id is present on that observation. A parent with no company does not constrain the company on the activity.'
+  - 'The observation of a source identifier in effect at a timestamp is the row with that identifier whose observed_at is the latest at or before that timestamp. If no row of that identifier has observed_at at or before the timestamp, no observation is in effect, and a rule that requires one is not satisfied.'
+  - 'When a relationship value is present, it equals a source identifier defined by the referenced contract in the same dataset. Relationship fields store the parent source identifier. They do not embed the parent record.'
+  - 'Source identifiers are opaque non-empty strings. HubSpot identifiers are expected to be numeric strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
+  - 'source_system, delivery_id, and ingested_at are platform delivery metadata. They are not canonical business attributes, they do not open a canonical Type 2 version by themselves, and they are not part of observation_key. source_system equals hubspot. A replay uses a new delivery_id and the same business attributes. ingested_at may be later than the business timestamps on the row. Late delivery is valid.'
+  - 'This contract does not contain canonical surrogate keys, surviving_account_id, surviving_contact_id, surviving_lead_id, surviving_opportunity_id, surviving_subscription_id, surviving_product_user_id, commercial_status, effective_start, effective_end, is_current, customer_converted, adoption_reached, or a lifecycle_event payload. It does not contain calculated ARR, net retention, pipeline coverage, win rate, or an adoption score, and it does not copy an amount from another source entity.'
+  - 'occurred_at and ingested_at stay distinct. occurred_at is UTC.'

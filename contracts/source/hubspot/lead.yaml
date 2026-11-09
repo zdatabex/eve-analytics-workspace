@@ -1,0 +1,133 @@
+id: hubspot.lead
+title: 'HubSpot lead'
+source_system: hubspot
+source_entity: lead
+canonical_entity: lead
+history: observation
+grain: 'One row represents one observation of one HubSpot lead at one observed_at.'
+source_identifier:
+  - hubspot_lead_id
+observation_key:
+  - hubspot_lead_id
+  - observed_at
+fields:
+  - name: hubspot_lead_id
+    type: string
+    nullable: false
+    maps_to: lead.hubspot_lead_id
+    description: 'Opaque non-empty source identifier issued by the source system. Not a canonical surrogate key. The contract accepts any non-empty string and does not reject a value solely for its shape. HubSpot identifiers are expected to be numeric strings. That shape is an assumption, not a rejection rule.'
+  - name: status
+    type: enum
+    nullable: false
+    maps_to: lead.status
+    allowed_values:
+      - new
+      - working
+      - qualified
+      - disqualified
+      - converted
+    description: 'Lead status. No other value is valid. The canonical lead keeps the current status. This source contract still records each status change as its own observation.'
+  - name: created_at
+    type: timestamp
+    nullable: false
+    maps_to: lead.created_at
+    description: 'When the inquiry opened. ISO-8601 timestamp in UTC. Stable across observations of this lead.'
+  - name: observed_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'Observation time. ISO-8601 timestamp in UTC. At or after created_at. The creation observation sets observed_at equal to created_at. Part of the observation key with hubspot_lead_id.'
+  - name: emitted_event
+    type: enum
+    nullable: true
+    maps_to: null
+    allowed_values:
+      - lead_created
+      - lead_qualified
+      - lead_disqualified
+      - lead_converted
+    description: 'Lifecycle signal chosen by this observation. Downstream this chooses lifecycle_event.event_name. Null when status is working. This contract does not contain a lifecycle_event payload. A missing value is null, not an empty string.'
+  - name: hubspot_company_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Firm link. Reference to the lead account. A missing value is null, not an empty string. Optional.'
+  - name: hubspot_contact_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Person link. Reference to the lead contact. A missing value is null, not an empty string. Optional.'
+  - name: marketing_campaign_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Originating campaign. Reference to campaign.marketing_campaign_id. A missing value is null, not an empty string. Optional.'
+  - name: hubspot_deal_id
+    type: string
+    nullable: true
+    maps_to: null
+    description: 'Deal created by conversion. Reference to opportunity.hubspot_deal_id. Required when emitted_event is lead_converted. Otherwise null.'
+ingestion:
+  - name: source_system
+    type: enum
+    nullable: false
+    maps_to: null
+    allowed_values:
+      - hubspot
+    description: 'Platform delivery metadata. The value equals the source_system of this file. The platform vocabulary is hubspot, dealhub, marketing, or product. This field is not a canonical business attribute and does not open a canonical Type 2 version by itself. It is not part of observation_key.'
+  - name: delivery_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The extraction batch. A required string is present and non-empty. Many rows may share one delivery_id. A replay uses a new delivery_id and the same business attributes. Not a canonical business attribute and not part of observation_key.'
+  - name: ingested_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'When this delivery was accepted. ISO-8601 timestamp in UTC. It may be later than observed_at, occurred_at, or booked_at. Late delivery is valid. Not a canonical business attribute and not part of observation_key.'
+relationships:
+  - field: hubspot_company_id
+    references: hubspot.company.hubspot_company_id
+    required: false
+    cardinality: 'Many leads may cite one company.'
+  - field: hubspot_contact_id
+    references: hubspot.contact.hubspot_contact_id
+    required: false
+    cardinality: 'Many leads may cite one contact.'
+  - field: marketing_campaign_id
+    references: marketing.campaign.marketing_campaign_id
+    required: false
+    cardinality: 'Many leads may cite one campaign.'
+  - field: hubspot_deal_id
+    references: hubspot.deal.hubspot_deal_id
+    required: false
+    requirement: 'Required when emitted_event is lead_converted. Otherwise null.'
+    cardinality: 'A lead cites at most one deal.'
+events:
+  - signal: lead_created
+    condition: 'status is new on the creation observation. One per lead. observed_at equals created_at.'
+  - signal: lead_qualified
+    condition: 'status is qualified. At most one per lead.'
+  - signal: lead_disqualified
+    condition: 'status is disqualified. At most one per lead.'
+  - signal: lead_converted
+    condition: 'status is converted. At most one per lead. hubspot_deal_id is present.'
+  - signal: none
+    condition: 'status is working. emitted_event is null. working does not emit a lead event.'
+rules:
+  - 'The canonical lead dimension keeps the current lead and stores status history as lifecycle events. This source contract uses history observation because each status change is a separate source signal. One current-row schema cannot carry that sequence.'
+  - 'qualified and disqualified do not both occur for one lead.'
+  - 'lead_converted occurs only after lead_qualified for that hubspot_lead_id.'
+  - 'A disqualified lead has no hubspot_deal_id.'
+  - 'A lead may omit both the company and the contact. The deal of a converted lead still has a company. The source creates that company before the deal when the lead had no firm.'
+  - 'The lead contract does not contain a customer record. Conversion cites hubspot_deal_id. It does not rewrite the lead into a company.'
+  - 'working does not emit a lead event. emitted_event is null when status is working.'
+  - 'created_at is stable across observations of this lead. observed_at is at or after created_at. The creation observation sets them equal.'
+  - 'One lead_created exists for each lead. lead_qualified, lead_disqualified, and lead_converted each occur at most once per lead.'
+  - 'A lead converts to at most one deal.'
+  - 'When a relationship value is present, it equals a source identifier defined by the referenced contract in the same dataset. Relationship fields store the parent source identifier. They do not embed the parent record.'
+  - 'History is observation. A different payload at an existing observation_key is invalid. A business change is a new observed_at, and therefore a new observation_key. A replay is a new delivery_id for an existing observation_key whose business attributes match.'
+  - 'Source identifiers are opaque non-empty strings. HubSpot identifiers are expected to be numeric strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
+  - 'source_system, delivery_id, and ingested_at are platform delivery metadata. They are not canonical business attributes, they do not open a canonical Type 2 version by themselves, and they are not part of observation_key. source_system equals hubspot. A replay uses a new delivery_id and the same business attributes. ingested_at may be later than the business timestamps on the row. Late delivery is valid.'
+  - 'This contract does not contain canonical surrogate keys, surviving_account_id, surviving_contact_id, surviving_lead_id, surviving_opportunity_id, surviving_subscription_id, surviving_product_user_id, commercial_status, effective_start, effective_end, is_current, customer_converted, adoption_reached, or a lifecycle_event payload. It does not contain calculated ARR, net retention, pipeline coverage, win rate, or an adoption score, and it does not copy an amount from another source entity.'
+  - 'Creation and observation stay distinct timestamps. Both are UTC. A date is not used for either column.'

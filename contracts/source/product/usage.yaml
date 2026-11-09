@@ -1,0 +1,88 @@
+id: product.usage
+title: 'Product usage'
+source_system: product
+source_entity: usage
+canonical_entity: product_usage
+history: immutable
+grain: 'One row represents one usage of one AI workflow by one product user.'
+source_identifier:
+  - product_usage_source_id
+observation_key:
+  - product_usage_source_id
+fields:
+  - name: product_usage_source_id
+    type: string
+    nullable: false
+    maps_to: product_usage.product_usage_source_id
+    description: 'Opaque non-empty source identifier issued by the source system. Not a canonical surrogate key. The contract accepts any non-empty string and does not reject a value solely for its shape. Product identifiers are expected to be opaque strings. That shape is an assumption, not a rejection rule.'
+  - name: occurred_at
+    type: timestamp
+    nullable: false
+    maps_to: product_usage.occurred_at
+    description: 'When the run happened. ISO-8601 timestamp in UTC.'
+  - name: work_unit_count
+    type: integer
+    nullable: false
+    maps_to: product_usage.work_unit_count
+    description: 'Whole number. Minimum 1. A single run is 1. Not an adoption score. Usage does not carry a commercial amount.'
+  - name: product_user_source_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The login. A required string is present and non-empty. Reference to the usage product user.'
+  - name: product_firm_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The tenant. A required string is present and non-empty. Reference to the usage account. This is the firm cited by that product_user_source_id observation in effect at occurred_at.'
+  - name: product_workflow_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The capability. A required string is present and non-empty. Reference to the usage workflow.'
+ingestion:
+  - name: source_system
+    type: enum
+    nullable: false
+    maps_to: null
+    allowed_values:
+      - product
+    description: 'Platform delivery metadata. The value equals the source_system of this file. The platform vocabulary is hubspot, dealhub, marketing, or product. This field is not a canonical business attribute and does not open a canonical Type 2 version by itself. It is not part of observation_key.'
+  - name: delivery_id
+    type: string
+    nullable: false
+    maps_to: null
+    description: 'The extraction batch. A required string is present and non-empty. Many rows may share one delivery_id. A replay uses a new delivery_id and the same business attributes. Not a canonical business attribute and not part of observation_key.'
+  - name: ingested_at
+    type: timestamp
+    nullable: false
+    maps_to: null
+    description: 'When this delivery was accepted. ISO-8601 timestamp in UTC. It may be later than observed_at, occurred_at, or booked_at. Late delivery is valid. Not a canonical business attribute and not part of observation_key.'
+relationships:
+  - field: product_user_source_id
+    references: product.user.product_user_source_id
+    required: true
+    cardinality: 'Many usage rows may cite one product user.'
+  - field: product_firm_id
+    references: product.firm.product_firm_id
+    required: true
+    cardinality: 'Many usage rows may cite one firm.'
+  - field: product_workflow_id
+    references: product.ai_workflow.product_workflow_id
+    required: true
+    cardinality: 'Many usage rows may cite one workflow.'
+events: []
+rules:
+  - 'History is immutable. observation_key is product_usage_source_id. The contract has no observed_at. A correction or a distinct event is a new product_usage_source_id. A second delivery of an existing identifier is a replay only when the business attributes match. A different payload does not rewrite the event.'
+  - 'Each row is the product_usage lifecycle event. It is not repeated on a lifecycle_event contract. This contract has no emitted_event field.'
+  - 'product_firm_id is the firm cited by that product_user_source_id observation in effect at occurred_at.'
+  - 'The observation of a source identifier in effect at a timestamp is the row with that identifier whose observed_at is the latest at or before that timestamp. If no row of that identifier has observed_at at or before the timestamp, no observation is in effect, and a rule that requires one is not satisfied.'
+  - 'Seat count on a subscription does not constrain work_unit_count or the number of users.'
+  - 'Usage does not carry a commercial amount. work_unit_count minimum is 1.'
+  - 'All three parent fields are required.'
+  - 'This contract has no observed_at.'
+  - 'When a relationship value is present, it equals a source identifier defined by the referenced contract in the same dataset. Relationship fields store the parent source identifier. They do not embed the parent record.'
+  - 'Source identifiers are opaque non-empty strings. Product identifiers are expected to be opaque strings. That shape is an assumption, not a rejection rule. A missing value is null, not an empty string. A required string is present and non-empty.'
+  - 'source_system, delivery_id, and ingested_at are platform delivery metadata. They are not canonical business attributes, they do not open a canonical Type 2 version by themselves, and they are not part of observation_key. source_system equals product. A replay uses a new delivery_id and the same business attributes. ingested_at may be later than the business timestamps on the row. Late delivery is valid.'
+  - 'This contract does not contain canonical surrogate keys, surviving_account_id, surviving_contact_id, surviving_lead_id, surviving_opportunity_id, surviving_subscription_id, surviving_product_user_id, commercial_status, effective_start, effective_end, is_current, customer_converted, adoption_reached, or a lifecycle_event payload. It does not contain calculated ARR, net retention, pipeline coverage, win rate, or an adoption score, and it does not copy an amount from another source entity.'
+  - 'occurred_at and ingested_at stay distinct. occurred_at is UTC.'
