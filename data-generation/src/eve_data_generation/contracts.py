@@ -45,11 +45,15 @@ class Contract:
 
     @property
     def table_name(self) -> str:
-        return f"src_{self.source_system}_{self.source_entity}"
+        return self.source_entity
 
     @property
     def file_name(self) -> str:
-        return f"{self.source_system}_{self.source_entity}.jsonl"
+        return f"{self.source_entity}.jsonl"
+
+    @property
+    def raw_schema(self) -> str:
+        return f"raw_{self.source_system}"
 
     def field(self, name: str) -> Field:
         for column in self.columns:

@@ -239,11 +239,15 @@ class ContractSpec:
 
     @property
     def file_name(self) -> str:
-        return f"{self.source_system}_{self.source_entity}.jsonl"
+        return f"{self.source_system}/{self.source_entity}.jsonl"
 
     @property
     def table_name(self) -> str:
-        return f"src_{self.source_system}_{self.source_entity}"
+        return self.source_entity
+
+    @property
+    def raw_schema(self) -> str:
+        return f"raw_{self.source_system}"
 
 
 @dataclass
@@ -264,6 +268,7 @@ class DatasetRun:
     rows: dict[str, list[dict]] = field(default_factory=dict)
     row_counts: dict[str, str] = field(default_factory=dict)
     manifest: dict | None = None
+    manifests: dict = field(default_factory=dict)
     reproducible: bool = False
     distribution: dict = field(default_factory=dict)
     edges: list[tuple[str, str]] = field(default_factory=list)

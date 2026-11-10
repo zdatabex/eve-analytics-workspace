@@ -25,8 +25,7 @@ logs/
 
 # Generated data
 /data/generated/
-/data/warehouse/*.duckdb
-/data/warehouse/*.wal
+/data/warehouse/
 
 # OS
 .DS_Store

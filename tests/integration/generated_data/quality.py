@@ -64,11 +64,18 @@ def check_configuration(run: DatasetRun, defects: list[Defect], development_days
             "default.yaml spans at least 18 months.",
             field="window", actual=f"{start} through {end}",
         )
+    selected_file = config.get("schema") or "dev_data_003"
+    if run.load_schema != selected_file:
+        add_defect(
+            defects, run, "schema_compliance",
+            "The configuration schema value selects the warehouse file dev_data_003 or dev_data_004.",
+            field="warehouse file", actual=run.load_schema,
+        )
     if run.population == "baseline":
         if "journeys" in config or "schema" in config:
             add_defect(
                 defects, run, "schema_compliance",
-                "A baseline file has no journeys key and no schema key. The load schema is dev_data_003.",
+                "A baseline file has no journeys key and no schema key. The warehouse file is dev_data_003.",
                 field="schema", actual=sorted(key for key in ("journeys", "schema") if key in config),
             )
         if int(config.get("activity_count") or 0) < 2 or int(config.get("touch_count") or 0) < 1:
@@ -155,36 +162,59 @@ def _expected_window(path: str) -> tuple[str, str]:
 def check_schema(run: DatasetRun, contracts: dict[str, ContractSpec], defects: list[Defect]) -> None:
     if not run.generated or run.directory is None:
         return
-    present = sorted(path.name for path in run.directory.iterdir() if path.is_file())
-    expected_files = {contract.file_name for contract in contracts.values()} | {"manifest.json"}
-    for name in present:
-        if name.startswith("apollo") or name.startswith("clay") or name not in expected_files:
+    expected_sources = sorted({contract.source_system for contract in contracts.values()})
+    layout = (
+        "The output directory's children are hubspot/, dealhub/, marketing/, and product/. "
+        "Each source directory holds <source_entity>.jsonl and manifest.json. "
+        "Flat JSON Lines files, a dataset-level manifest.json, and Apollo and Clay files are absent."
+    )
+    for path in run.directory.iterdir():
+        if path.is_file() or path.name not in expected_sources:
             add_defect(
-                defects, run, "schema_compliance",
-                "Apollo and Clay files are absent. Every dataset file is a source entity or manifest.json.",
-                field="file", actual=name,
+                defects, run, "schema_compliance", layout,
+                field="path", actual=path.name,
             )
-    for contract in contracts.values():
-        path = run.directory / contract.file_name
-        if not path.exists():
+    for source in expected_sources:
+        source_dir = run.directory / source
+        source_contracts = [contract for contract in contracts.values() if contract.source_system == source]
+        if not source_dir.is_dir():
             add_defect(
-                defects, run, "schema_compliance",
-                "Each dataset has one JSON Lines file named <source_system>_<source_entity>.jsonl.",
-                contract=contract.path, entity=contract.id, field="file", actual="missing",
+                defects, run, "schema_compliance", layout,
+                field="path", actual=f"{source}/",
             )
             continue
-        rows = run.rows.get(contract.id, [])
-        if not rows:
-            add_defect(
-                defects, run, "schema_compliance",
-                "Every committed dataset contains at least one row of every entity.",
-                contract=contract.path, entity=contract.id, field="rows", actual=0,
-            )
-        for row in rows:
-            _check_row_schema(run, contract, row, defects)
-    _check_manifest(run, contracts, defects)
+        expected_names = {f"{contract.source_entity}.jsonl" for contract in source_contracts} | {"manifest.json"}
+        for child in source_dir.iterdir():
+            if child.name not in expected_names or _retired_name(child.name):
+                add_defect(
+                    defects, run, "schema_compliance", layout,
+                    field="path", actual=f"{source}/{child.name}",
+                )
+        for contract in source_contracts:
+            path = run.directory / contract.file_name
+            if not path.is_file():
+                add_defect(
+                    defects, run, "schema_compliance",
+                    "Each source directory has one JSON Lines file named <source_entity>.jsonl.",
+                    contract=contract.path, entity=contract.id, field="path", actual=contract.file_name,
+                )
+                continue
+            rows = run.rows.get(contract.id, [])
+            if not rows:
+                add_defect(
+                    defects, run, "schema_compliance",
+                    "Every committed dataset contains at least one row of every entity.",
+                    contract=contract.path, entity=contract.id, field="rows", actual=0,
+                )
+            for row in rows:
+                _check_row_schema(run, contract, row, defects)
+    _check_manifests(run, contracts, defects)
     _check_contract_shape(run, contracts, defects)
     _shape_recommendations(run, contracts)
+
+
+def _retired_name(name: str) -> bool:
+    return name.startswith("apollo") or name.startswith("clay") or name.startswith("src_")
 
 
 def _check_contract_shape(run: DatasetRun, contracts: dict[str, ContractSpec], defects: list[Defect]) -> None:
@@ -322,68 +352,108 @@ def _valid_domain(value: str) -> bool:
     return True
 
 
-def _check_manifest(run: DatasetRun, contracts: dict[str, ContractSpec], defects: list[Defect]) -> None:
-    manifest = run.manifest
-    rule = "manifest.json records the seed, the configuration file name, start_date, end_date, delivery_id, and the row count of each entity."
-    if not isinstance(manifest, dict):
-        add_defect(defects, run, "schema_compliance", rule, entity="manifest", field="manifest.json", actual="missing")
-        return
-    extra = sorted(set(manifest) - MANIFEST_KEYS)
-    missing = sorted(MANIFEST_KEYS - set(manifest))
-    if extra or missing:
-        add_defect(
-            defects, run, "schema_compliance",
-            "The manifest has no wall-clock timestamp. Its keys are the seed, configuration file name, window, delivery_id, and entity counts.",
-            entity="manifest", field="keys", actual={"extra": extra, "missing": missing},
-        )
-    if manifest.get("configuration_file") != run.path.rsplit("/", 1)[-1]:
-        add_defect(
-            defects, run, "schema_compliance", rule,
-            entity="manifest", field="configuration_file", actual=manifest.get("configuration_file"),
-        )
-    if manifest.get("seed") != run.expected_seed:
-        add_defect(
-            defects, run, "schema_compliance", rule,
-            entity="manifest", field="seed", actual=manifest.get("seed"),
-        )
-    delivery = f"dlv_{run.expected_seed}"
-    if manifest.get("delivery_id") != delivery:
-        add_defect(
-            defects, run, "schema_compliance",
-            "One run uses one delivery_id, dlv_<seed>.",
-            entity="manifest", field="delivery_id", actual=manifest.get("delivery_id"),
-        )
-    start = as_date((run.config or {}).get("start_date"))
-    end = as_date((run.config or {}).get("end_date"))
-    if manifest.get("start_date") != (start.isoformat() if start else None):
-        add_defect(
-            defects, run, "schema_compliance", rule,
-            entity="manifest", field="start_date", actual=manifest.get("start_date"),
-        )
-    if manifest.get("end_date") != (end.isoformat() if end else None):
-        add_defect(
-            defects, run, "schema_compliance", rule,
-            entity="manifest", field="end_date", actual=manifest.get("end_date"),
-        )
-    entities = manifest.get("entities")
-    if not isinstance(entities, dict):
-        add_defect(defects, run, "schema_compliance", rule, entity="manifest", field="entities", actual=entities)
-        return
-    expected_ids = set(contracts)
-    if set(entities) != expected_ids:
-        add_defect(
-            defects, run, "schema_compliance", rule,
-            entity="manifest", field="entities",
-            actual={"missing": sorted(expected_ids - set(entities)), "extra": sorted(set(entities) - expected_ids)},
-        )
-    for contract_id, count in entities.items():
-        actual = len(run.rows.get(contract_id, []))
-        if count != actual:
+def _check_manifests(run: DatasetRun, contracts: dict[str, ContractSpec], defects: list[Defect]) -> None:
+    rule = (
+        "Each source manifest.json records the seed, the configuration file name, "
+        "start_date, end_date, delivery_id, and that source's row counts."
+    )
+    sources = sorted({contract.source_system for contract in contracts.values()})
+    loaded = []
+    for source in sources:
+        manifest = run.manifests.get(source)
+        path = f"{source}/manifest.json"
+        if not isinstance(manifest, dict):
+            add_defect(
+                defects, run, "schema_compliance", rule,
+                entity="manifest", field=path, actual="missing",
+            )
+            continue
+        extra = sorted(set(manifest) - MANIFEST_KEYS)
+        missing = sorted(MANIFEST_KEYS - set(manifest))
+        if extra or missing:
             add_defect(
                 defects, run, "schema_compliance",
-                "Manifest entity counts match the files.",
-                entity=contract_id, field="entities", actual=f"manifest={count} file={actual}",
+                "The manifest has no wall-clock timestamp. Its keys are the seed, configuration file name, window, delivery_id, and entity counts.",
+                entity="manifest", field=path, actual={"extra": extra, "missing": missing},
             )
+        if manifest.get("configuration_file") != run.path.rsplit("/", 1)[-1]:
+            add_defect(
+                defects, run, "schema_compliance", rule,
+                entity="manifest", field="configuration_file", actual=manifest.get("configuration_file"),
+            )
+        if manifest.get("seed") != run.expected_seed:
+            add_defect(
+                defects, run, "schema_compliance", rule,
+                entity="manifest", field="seed", actual=manifest.get("seed"),
+            )
+        delivery = f"dlv_{run.expected_seed}"
+        if manifest.get("delivery_id") != delivery:
+            add_defect(
+                defects, run, "schema_compliance",
+                "One run uses one delivery_id, dlv_<seed>.",
+                entity="manifest", field="delivery_id", actual=manifest.get("delivery_id"),
+            )
+        start = as_date((run.config or {}).get("start_date"))
+        end = as_date((run.config or {}).get("end_date"))
+        if manifest.get("start_date") != (start.isoformat() if start else None):
+            add_defect(
+                defects, run, "schema_compliance", rule,
+                entity="manifest", field="start_date", actual=manifest.get("start_date"),
+            )
+        if manifest.get("end_date") != (end.isoformat() if end else None):
+            add_defect(
+                defects, run, "schema_compliance", rule,
+                entity="manifest", field="end_date", actual=manifest.get("end_date"),
+            )
+        if "T" in str(manifest.get("start_date")) or "T" in str(manifest.get("end_date")):
+            add_defect(
+                defects, run, "schema_compliance",
+                "The manifest has no wall-clock timestamp and no time component on the dates.",
+                entity="manifest", field="start_date", actual=manifest.get("start_date"),
+            )
+        entities = manifest.get("entities")
+        source_contracts = [contract for contract in contracts.values() if contract.source_system == source]
+        expected_entities = {contract.source_entity for contract in source_contracts}
+        if not isinstance(entities, dict):
+            add_defect(
+                defects, run, "schema_compliance", rule,
+                entity="manifest", field="entities", actual=entities,
+            )
+            continue
+        if set(entities) != expected_entities:
+            add_defect(
+                defects, run, "schema_compliance",
+                "entities lists that source's source_entity values and no entity from another source.",
+                entity="manifest", field="entities",
+                actual={
+                    "source": source,
+                    "missing": sorted(expected_entities - set(entities)),
+                    "extra": sorted(set(entities) - expected_entities),
+                },
+            )
+        by_entity = {contract.source_entity: contract for contract in source_contracts}
+        for entity, count in entities.items():
+            contract = by_entity.get(entity)
+            actual = len(run.rows.get(contract.id, [])) if contract else None
+            if count != actual:
+                add_defect(
+                    defects, run, "schema_compliance",
+                    "Manifest entity counts match the files.",
+                    entity=contract.id if contract else entity,
+                    field="entities", actual=f"manifest={count} file={actual}",
+                )
+        loaded.append(manifest)
+    shared_keys = ("configuration_file", "delivery_id", "seed", "start_date", "end_date")
+    if len(loaded) > 1:
+        for key in shared_keys:
+            values = {item.get(key) for item in loaded}
+            if len(values) != 1:
+                add_defect(
+                    defects, run, "schema_compliance",
+                    "The four manifests share configuration_file, delivery_id, seed, start_date, and end_date.",
+                    entity="manifest", field=key, actual=sorted(str(value) for value in values),
+                )
+    delivery = f"dlv_{run.expected_seed}"
     deliveries = {
         row.get("delivery_id")
         for rows in run.rows.values()
@@ -392,7 +462,7 @@ def _check_manifest(run: DatasetRun, contracts: dict[str, ContractSpec], defects
     if deliveries != {delivery}:
         add_defect(
             defects, run, "schema_compliance",
-            "One run uses one delivery_id, shared by the manifest and every row.",
+            "One run uses one delivery_id, shared by every manifest and every row.",
             entity="manifest", field="delivery_id", actual=sorted(str(item) for item in deliveries),
         )
 

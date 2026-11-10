@@ -11,7 +11,7 @@ python3 -m pip install -e "data-generation[dev]"
 python3 -m pytest tests/integration/generated_data
 ```
 
-The suite calls the existing generate and load commands. It passes `--output`, `--dataset-dir`, and `--warehouse`, all under a temporary directory, and deletes those files when the run finishes. It does not write `data-generation/output/` and it does not replace `data-generation/output/warehouse/dev_data_003`.
+The suite calls the existing generate and load commands. It passes `--output`, `--dataset-dir`, and `--warehouse`, all under a temporary directory, and deletes those files when the run finishes. It does not write `data-generation/output/`. It leaves `data/warehouse/dev_data_003` and `data/warehouse/dev_data_004` in place.
 
 ```bash
 python3 -m eve_data_generation generate --config data-generation/config/<file>.yaml --output <temp directory>

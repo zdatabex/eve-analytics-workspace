@@ -51,7 +51,7 @@ def _dataset_section(run: DatasetRun) -> list[str]:
         f"- Seed: {run.seed or run.expected_seed}",
         f"- Window: {run.start or 'unknown'} through {run.end or 'unknown'}",
         f"- Delivery id: {run.delivery_id or 'unknown'}",
-        f"- Load schema: {run.load_schema}",
+        f"- Warehouse file: {run.load_schema}",
         f"- Generate command: `{run.generate_command}`",
         "",
         "| Entity | Rows |",

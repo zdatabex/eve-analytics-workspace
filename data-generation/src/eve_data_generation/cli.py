@@ -27,12 +27,18 @@ def main(argv: list[str] | None = None) -> int:
 
     generate = commands.add_parser("generate", help="Write a synthetic dataset")
     generate.add_argument("--config", required=True, help="Path to a generation YAML file")
-    generate.add_argument("--output", help="Dataset directory. Defaults to output/<config name>")
+    generate.add_argument(
+        "--output",
+        help="Parent of the source directories. Defaults to output/<config name>",
+    )
 
-    load = commands.add_parser("load", help="Load a dataset into the configured schema")
+    load = commands.add_parser("load", help="Load source drops into raw schemas")
     load.add_argument("--config", required=True, help="Path to the generation YAML file")
-    load.add_argument("--dataset-dir", help="Dataset directory. Defaults to output/<config name>")
-    load.add_argument("--warehouse", help="DuckDB file. Overrides EVE_DATA_GENERATION_DUCKDB_PATH")
+    load.add_argument("--dataset-dir", help="Drop directory. Defaults to output/<config name>")
+    load.add_argument(
+        "--warehouse",
+        help="DuckDB file. Overrides EVE_DATA_GENERATION_DUCKDB_PATH and the schema file name",
+    )
 
     args = parser.parse_args(argv)
     try:
