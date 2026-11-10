@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
+import shutil
 from collections import Counter
 from dataclasses import replace
 from datetime import date, timedelta
@@ -20,7 +20,7 @@ from eve_data_generation.contracts import load_contracts
 from eve_data_generation.dataset import build_dataset
 from eve_data_generation.errors import ConfigError, GenerationError
 from eve_data_generation.loader import load_dataset, warehouse_path
-from eve_data_generation.paths import CONFIG_DIR, DATA_GENERATION_ROOT
+from eve_data_generation.paths import CONFIG_DIR, DATA_GENERATION_ROOT, OUTPUT_ROOT, REPO_ROOT, WAREHOUSE_ENV
 from eve_data_generation.sampling import WINDOW_ERROR, allocate, inclusive_dates, share_count
 from eve_data_generation.writer import write_dataset
 
@@ -391,82 +391,134 @@ def test_reproducible_bytes(config, contracts, tmp_path):
     second = tmp_path / "two"
     write_dataset(build_dataset(config), contracts, first)
     write_dataset(build_dataset(config), contracts, second)
-    files = sorted(path.name for path in first.iterdir())
-    assert files == sorted(path.name for path in second.iterdir())
-    assert "manifest.json" in files
-    for name in files:
-        assert (first / name).read_bytes() == (second / name).read_bytes()
+    left = _files(first)
+    right = _files(second)
+    assert left.keys() == right.keys()
+    assert set(first.iterdir()) == {first / name for name in ("dealhub", "hubspot", "marketing", "product")}
+    for name in left:
+        assert left[name] == right[name]
+        if name.endswith("manifest.json"):
+            assert name.count("/") == 1
     other = replace(config, seed=config.seed + 1, config_file=config.config_file)
     third = tmp_path / "three"
     write_dataset(build_dataset(other), contracts, third)
-    assert (first / "hubspot_lead.jsonl").read_bytes() != (third / "hubspot_lead.jsonl").read_bytes()
+    assert (first / "hubspot" / "lead.jsonl").read_bytes() != (third / "hubspot" / "lead.jsonl").read_bytes()
 
 
-def test_jsonl_and_manifest(config, contracts, tmp_path):
+def test_jsonl_and_manifest(config, contracts, dataset, tmp_path):
     directory = tmp_path / "dataset"
-    write_dataset(build_dataset(config), contracts, directory)
-    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-    assert set(manifest) == {
-        "configuration_file",
-        "delivery_id",
-        "end_date",
-        "entities",
-        "seed",
-        "start_date",
+    retired = directory
+    retired.mkdir()
+    (retired / "hubspot_company.jsonl").write_text("retired\n", encoding="utf-8")
+    (retired / "manifest.json").write_text("{}\n", encoding="utf-8")
+    (retired / "warehouse").mkdir()
+    write_dataset(dataset, contracts, directory)
+    assert sorted(path.name for path in directory.iterdir()) == ["dealhub", "hubspot", "marketing", "product"]
+    assert not any(directory.rglob("*.duckdb"))
+    assert not (REPO_ROOT / "data" / "warehouse").exists()
+    manifests = []
+    for source in ("hubspot", "dealhub", "marketing", "product"):
+        manifest = json.loads((directory / source / "manifest.json").read_text(encoding="utf-8"))
+        manifests.append(manifest)
+        assert set(manifest) == {
+            "configuration_file",
+            "delivery_id",
+            "end_date",
+            "entities",
+            "seed",
+            "start_date",
+        }
+        assert "T" not in manifest["start_date"]
+        assert "T" not in manifest["end_date"]
+        source_contracts = [contract for contract in contracts.values() if contract.source_system == source]
+        assert set(manifest["entities"]) == {contract.source_entity for contract in source_contracts}
+        for contract in source_contracts:
+            path = directory / source / contract.file_name
+            text = path.read_text(encoding="utf-8")
+            lines = [line for line in text.splitlines() if line]
+            assert manifest["entities"][contract.source_entity] == len(lines)
+            if lines:
+                assert text.endswith("\n")
+    shared = {
+        (item["configuration_file"], item["delivery_id"], item["seed"], item["start_date"], item["end_date"])
+        for item in manifests
     }
-    assert manifest["seed"] == config.seed
-    assert manifest["configuration_file"] == "test.yaml"
-    assert manifest["delivery_id"] == f"dlv_{config.seed}"
-    assert "T" not in manifest["start_date"]
-    sample = (directory / "hubspot_company.jsonl").read_text(encoding="utf-8")
-    assert sample.endswith("\n")
+    assert shared == {("test.yaml", f"dlv_{config.seed}", config.seed, config.start_date.isoformat(), config.end_date.isoformat())}
+    sample = (directory / "hubspot" / "company.jsonl").read_text(encoding="utf-8")
     row = json.loads(sample.splitlines()[0])
     assert list(row) == sorted(row)
-    deal = json.loads((directory / "hubspot_deal.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    deal = json.loads((directory / "hubspot" / "deal.jsonl").read_text(encoding="utf-8").splitlines()[0])
     if deal["amount"] is not None:
         assert isinstance(deal["amount"], str)
         assert Decimal(deal["amount"]).as_tuple().exponent == -2
-    activity = (directory / "hubspot_activity.jsonl").read_text(encoding="utf-8")
-    assert activity.endswith("\n")
+    empty = replace(dataset, rows={key: list(value) for key, value in dataset.rows.items()})
+    empty.rows["product.outcome"] = []
+    write_dataset(empty, contracts, directory)
+    assert (directory / "product" / "outcome.jsonl").read_text(encoding="utf-8") == ""
+    product = json.loads((directory / "product" / "manifest.json").read_text(encoding="utf-8"))
+    assert product["entities"]["outcome"] == 0
 
 
-def test_loader_replaces_rows_and_preserves_decimals(config, contracts, tmp_path, monkeypatch):
+def test_output_override_does_not_insert_a_dataset_stem(dataset, contracts, tmp_path):
+    output = tmp_path / "data" / "generated"
+    write_dataset(dataset, contracts, output)
+    assert sorted(path.name for path in output.iterdir()) == ["dealhub", "hubspot", "marketing", "product"]
+    assert (output / "marketing" / "campaign_performance.jsonl").is_file()
+    assert not (output / "test").exists()
+    assert not (output / "manifest.json").exists()
+
+
+def test_loader_replaces_rows_and_preserves_decimals(config, contracts, dataset, tmp_path, monkeypatch):
     directory = tmp_path / "dataset"
-    write_dataset(build_dataset(config), contracts, directory)
+    write_dataset(dataset, contracts, directory)
     database = tmp_path / "warehouse" / "dev_data_003"
-    monkeypatch.delenv("EVE_DATA_GENERATION_DUCKDB_PATH", raising=False)
-    assert warehouse_path() .name == "dev_data_003"
-    monkeypatch.setenv("EVE_DATA_GENERATION_DUCKDB_PATH", "")
+    monkeypatch.delenv(WAREHOUSE_ENV, raising=False)
+    assert warehouse_path() == REPO_ROOT / "data" / "warehouse" / "dev_data_003"
+    monkeypatch.setenv(WAREHOUSE_ENV, "")
     assert warehouse_path() == warehouse_path(None)
+    explicit = tmp_path / "explicit.duckdb"
+    monkeypatch.setenv(WAREHOUSE_ENV, str(tmp_path / "from-env.duckdb"))
+    assert warehouse_path(schema="dev_data_004") == tmp_path / "from-env.duckdb"
+    assert warehouse_path(explicit, schema="dev_data_004") == explicit
+    monkeypatch.delenv(WAREHOUSE_ENV, raising=False)
     load_dataset(directory, database)
     load_dataset(directory, database)
     connection = duckdb.connect(str(database))
     catalog = connection.execute("SELECT current_catalog()").fetchone()[0]
-    company_table = f'"{catalog}"."dev_data_003"."src_hubspot_company"'
-    quote_table = f'"{catalog}"."dev_data_003"."src_dealhub_quote"'
+    company_table = f'"{catalog}"."raw_hubspot"."company"'
+    quote_table = f'"{catalog}"."raw_dealhub"."quote"'
     schemas = {row[0] for row in connection.execute("SELECT schema_name FROM information_schema.schemata").fetchall()}
-    assert "dev_data_003" in schemas
+    assert {"raw_hubspot", "raw_dealhub", "raw_marketing", "raw_product"} <= schemas
+    assert "dev_data_003" not in schemas
+    assert "dev_data_004" not in schemas
     tables = {
-        row[0]
+        (row[0], row[1])
         for row in connection.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'dev_data_003'"
+            """
+            SELECT table_schema, table_name
+            FROM information_schema.tables
+            WHERE table_schema IN ('raw_hubspot', 'raw_dealhub', 'raw_marketing', 'raw_product')
+            """
         ).fetchall()
     }
-    assert tables == {contract.table_name for contract in contracts.values()}
+    assert tables == {(contract.raw_schema, contract.table_name) for contract in contracts.values()}
+    assert not any(name.startswith("src_") for _schema, name in tables)
     columns = [
         row[0]
         for row in connection.execute(
             """
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_schema = 'dev_data_003' AND table_name = 'src_hubspot_company'
+            WHERE table_schema = 'raw_hubspot' AND table_name = 'company'
             ORDER BY ordinal_position
             """
         ).fetchall()
     ]
     assert columns == [field.name for field in contracts["hubspot.company"].columns]
     company_count = connection.execute(f"SELECT count(*) FROM {company_table}").fetchone()[0]
-    assert company_count == len(build_dataset(config).rows["hubspot.company"])
+    assert company_count == len(dataset.rows["hubspot.company"])
+    json_count = len((directory / "hubspot" / "company.jsonl").read_text(encoding="utf-8").splitlines())
+    assert company_count == json_count
     null_domains = connection.execute(
         f"SELECT count(*) FROM {company_table} WHERE primary_domain IS NULL"
     ).fetchone()[0]
@@ -485,20 +537,123 @@ def test_loader_replaces_rows_and_preserves_decimals(config, contracts, tmp_path
     assert restored == company_count
 
 
+def test_missing_entity_file_fails_the_load(dataset, contracts, tmp_path):
+    directory = tmp_path / "dataset"
+    write_dataset(dataset, contracts, directory)
+    (directory / "hubspot" / "company.jsonl").unlink()
+    with pytest.raises(GenerationError, match="missing entity file"):
+        load_dataset(directory, tmp_path / "warehouse.duckdb")
+
+
 def test_cli_generate_and_load(tmp_path, monkeypatch):
     output = tmp_path / "generated"
     database = tmp_path / "cli.duckdb"
     assert main(["generate", "--config", str(CONFIG_DIR / "test.yaml"), "--output", str(output)]) == 0
-    assert (output / "manifest.json").exists()
-    monkeypatch.setenv("EVE_DATA_GENERATION_DUCKDB_PATH", str(database))
+    assert (output / "hubspot" / "manifest.json").is_file()
+    assert not (output / "manifest.json").exists()
+    assert not any(output.rglob("*.duckdb"))
+    monkeypatch.setenv(WAREHOUSE_ENV, str(database))
     assert main(["load", "--config", str(CONFIG_DIR / "test.yaml"), "--dataset-dir", str(output)]) == 0
     assert database.exists()
+    connection = duckdb.connect(str(database))
+    schemas = {row[0] for row in connection.execute("SELECT schema_name FROM information_schema.schemata").fetchall()}
+    connection.close()
+    assert "raw_hubspot" in schemas
+    assert "dev_data_003" not in schemas
+
+
+def test_default_generate_path_and_data_generated(monkeypatch):
+    target = OUTPUT_ROOT / "test"
+    generated = REPO_ROOT / "data" / "generated"
+    warehouse = REPO_ROOT / "data" / "warehouse"
+    data_dir = REPO_ROOT / "data"
+    if target.exists():
+        shutil.rmtree(target)
+    generated_existed = generated.exists()
+    warehouse_existed = warehouse.exists()
+    data_existed = data_dir.exists()
+    try:
+        assert main(["generate", "--config", str(CONFIG_DIR / "test.yaml")]) == 0
+        assert (target / "hubspot" / "company.jsonl").is_file()
+        assert (target / "product" / "manifest.json").is_file()
+        assert not (target / "manifest.json").exists()
+        assert not any(target.rglob("*.duckdb"))
+        if not warehouse_existed:
+            assert not warehouse.exists()
+        if not generated_existed:
+            monkeypatch.delenv(WAREHOUSE_ENV, raising=False)
+            assert main([
+                "generate",
+                "--config", str(CONFIG_DIR / "test.yaml"),
+                "--output", str(generated),
+            ]) == 0
+            assert sorted(path.name for path in generated.iterdir()) == [
+                "dealhub", "hubspot", "marketing", "product",
+            ]
+            assert not (generated / "test").exists()
+            assert not warehouse.exists()
+    finally:
+        if target.exists():
+            shutil.rmtree(target)
+        if not generated_existed and generated.exists():
+            shutil.rmtree(generated)
+        if not warehouse_existed and warehouse.exists():
+            shutil.rmtree(warehouse)
+        if not data_existed and data_dir.exists() and not any(data_dir.iterdir()):
+            data_dir.rmdir()
+
+
+def test_baseline_load_creates_dev_data_003_and_leaves_dev_data_004(dataset, contracts, monkeypatch):
+    directory = REPO_ROOT / "data" / "generated"
+    warehouse = REPO_ROOT / "data" / "warehouse"
+    data_dir = REPO_ROOT / "data"
+    baseline = warehouse / "dev_data_003"
+    scenario = warehouse / "dev_data_004"
+    generated_existed = directory.exists()
+    warehouse_existed = warehouse.exists()
+    data_existed = data_dir.exists()
+    monkeypatch.delenv(WAREHOUSE_ENV, raising=False)
+    try:
+        if not generated_existed and not warehouse_existed:
+            write_dataset(dataset, contracts, directory)
+            created = load_dataset(directory)
+            assert created == baseline
+            assert baseline.is_file()
+            assert not scenario.exists()
+            connection = duckdb.connect(str(baseline))
+            schemas = {
+                row[0]
+                for row in connection.execute("SELECT schema_name FROM information_schema.schemata").fetchall()
+            }
+            connection.close()
+            assert "raw_hubspot" in schemas
+            assert "dev_data_003" not in schemas
+    finally:
+        if not generated_existed and directory.exists():
+            shutil.rmtree(directory)
+        if not warehouse_existed and warehouse.exists():
+            shutil.rmtree(warehouse)
+        if not data_existed and data_dir.exists() and not any(data_dir.iterdir()):
+            data_dir.rmdir()
 
 
 def test_output_is_gitignored():
     text = (DATA_GENERATION_ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "output/" in text
+    root_ignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "/data/generated/" in root_ignore
+    assert "/data/warehouse/" in root_ignore
     example = (DATA_GENERATION_ROOT / ".env.example").read_text(encoding="utf-8")
     assert "EVE_DATA_GENERATION_DUCKDB_PATH=" in example
+    assert "data/warehouse/dev_data_003" in example
+    assert "data/warehouse/dev_data_004" in example
     assert "secret" not in example.lower()
     assert not list(DATA_GENERATION_ROOT.joinpath("output").glob("*.jsonl"))
+
+
+def _files(directory: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(directory).as_posix(): path.read_bytes()
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }

@@ -91,10 +91,15 @@ def run_suite(repo: Path) -> SuiteResult:
     committed = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
     contracts = load_contracts(repo / "contracts" / "source")
     development_days = (DEVELOPMENT_END - DEVELOPMENT_START).days
-    warehouse_path = repo / "data-generation" / "output" / "warehouse" / "dev_data_003"
+    watched = (
+        repo / "data" / "warehouse" / "dev_data_003",
+        repo / "data" / "warehouse" / "dev_data_004",
+    )
     output_root = repo / "data-generation" / "output"
-    before_warehouse = _snapshot(warehouse_path)
+    generated_root = repo / "data" / "generated"
+    before_watched = {path: _snapshot(path) for path in watched}
     before_output = output_root.exists()
+    before_generated = generated_root.exists()
     defects: list[Defect] = []
     recommendations: list[tuple[str, str]] = []
     runs: list[DatasetRun] = []
@@ -115,7 +120,15 @@ def run_suite(repo: Path) -> SuiteResult:
             check_usage(run, contracts, defects)
             check_population(run, defects, recommendations)
             _load(repo, run, contracts, defects)
-        _warehouse_untouched(runs[0] if runs else None, before_warehouse, before_output, warehouse_path, output_root, defects)
+        _warehouse_untouched(
+            runs[0] if runs else None,
+            before_watched,
+            before_output,
+            before_generated,
+            output_root,
+            generated_root,
+            defects,
+        )
     defects = _cap(defects)
     recommendations = sorted(set(recommendations))
     text = render(runs, defects, recommendations)
@@ -205,17 +218,23 @@ def _compare_bytes(first: Path, second: Path, run: DatasetRun, defects: list[Def
 
 
 def _files(directory: Path) -> dict[str, bytes]:
-    return {path.name: path.read_bytes() for path in sorted(directory.iterdir()) if path.is_file()}
+    return {
+        path.relative_to(directory).as_posix(): path.read_bytes()
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }
 
 
 def _read_dataset(run: DatasetRun, contracts: dict[str, ContractSpec], defects: list[Defect]) -> None:
-    manifest_path = run.directory / "manifest.json"
-    if manifest_path.exists():
-        run.manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if isinstance(run.manifest, dict) and run.manifest.get("delivery_id"):
-            run.delivery_id = str(run.manifest.get("delivery_id"))
-    else:
-        run.manifest = None
+    run.manifests = {}
+    if run.directory is not None:
+        for source in sorted({contract.source_system for contract in contracts.values()}):
+            manifest_path = run.directory / source / "manifest.json"
+            if manifest_path.is_file():
+                run.manifests[source] = json.loads(manifest_path.read_text(encoding="utf-8"))
+    run.manifest = next(iter(run.manifests.values()), None)
+    if isinstance(run.manifest, dict) and run.manifest.get("delivery_id"):
+        run.delivery_id = str(run.manifest.get("delivery_id"))
     for contract in contracts.values():
         path = run.directory / contract.file_name
         if not path.exists():
@@ -238,7 +257,7 @@ def _load(repo: Path, run: DatasetRun, contracts: dict[str, ContractSpec], defec
     if completed.returncode != 0:
         add_defect(
             defects, run, "load_readback",
-            "The load command writes the configuration schema into the temporary warehouse file.",
+            "The load command writes raw_<source_system>.<source_entity> into the temporary warehouse file.",
             field="load", actual=(completed.stderr or completed.stdout).strip()[:500],
         )
         return
@@ -289,20 +308,34 @@ def _compare_warehouse(run: DatasetRun, contracts: dict[str, ContractSpec], defe
                 "select schema_name from information_schema.schemata"
             ).fetchall()
         }
-        if "dev_data_005" in schemas:
+        retired = sorted(schemas & {"dev_data_003", "dev_data_004", "dev_data_005"})
+        if retired:
             add_defect(
                 defects, run, "load_readback",
-                "The suite does not create dev_data_005.",
-                field="schema", actual="dev_data_005",
+                "The temporary file has no schema named dev_data_003, dev_data_004, or dev_data_005.",
+                field="schema", actual=retired,
             )
-        if run.load_schema not in schemas:
+        table_names = connection.execute(
+            "select table_schema, table_name from information_schema.tables"
+        ).fetchall()
+        retired_tables = sorted(
+            f"{schema}.{table}" for schema, table in table_names if str(table).startswith("src_")
+        )
+        if retired_tables:
             add_defect(
                 defects, run, "load_readback",
-                "The load command writes the schema named by the dataset table.",
-                field="schema", actual=sorted(schemas),
+                "The temporary file has no table named src_<source_system>_<source_entity>.",
+                field="table", actual=retired_tables,
             )
-            return
         for contract in contracts.values():
+            if contract.raw_schema not in schemas:
+                add_defect(
+                    defects, run, "load_readback",
+                    "The load command writes schema raw_<source_system> and table <source_entity>.",
+                    contract=contract.path, entity=contract.id, field="schema",
+                    actual=sorted(schemas),
+                )
+                continue
             columns = [
                 row[0]
                 for row in connection.execute(
@@ -312,7 +345,7 @@ def _compare_warehouse(run: DatasetRun, contracts: dict[str, ContractSpec], defe
                     where table_schema = ? and table_name = ?
                     order by ordinal_position
                     """,
-                    [run.load_schema, contract.table_name],
+                    [contract.raw_schema, contract.table_name],
                 ).fetchall()
             ]
             expected = [column.name for column in contract.columns]
@@ -326,7 +359,7 @@ def _compare_warehouse(run: DatasetRun, contracts: dict[str, ContractSpec], defe
                 continue
             quoted = ", ".join(f'"{name}"' for name in expected)
             loaded = connection.execute(
-                f'select {quoted} from "{run.load_schema}"."{contract.table_name}"'
+                f'select {quoted} from "{contract.raw_schema}"."{contract.table_name}"'
             ).fetchall()
             json_rows = [
                 tuple(_normalize_json(row.get(column.name), column) for column in contract.columns)
@@ -353,7 +386,7 @@ def _table_counts(run: DatasetRun, contracts: dict[str, ContractSpec]) -> dict[s
         counts = {}
         for contract in contracts.values():
             counts[contract.id] = connection.execute(
-                f'select count(*) from "{run.load_schema}"."{contract.table_name}"'
+                f'select count(*) from "{contract.raw_schema}"."{contract.table_name}"'
             ).fetchone()[0]
         return counts
     finally:
@@ -390,16 +423,34 @@ def _normalize_db(value, column):
     return value
 
 
-def _warehouse_untouched(run, before, output_existed, warehouse_path: Path, output_root: Path, defects: list[Defect]) -> None:
+def _warehouse_untouched(
+    run,
+    before_watched: dict[Path, tuple | None],
+    output_existed: bool,
+    generated_existed: bool,
+    output_root: Path,
+    generated_root: Path,
+    defects: list[Defect],
+) -> None:
     if run is None:
         return
-    after = _snapshot(warehouse_path)
-    created = not output_existed and output_root.exists()
-    if before != after or created:
+    changed = []
+    for path, before in before_watched.items():
+        after = _snapshot(path)
+        if before != after:
+            changed.append(path.name)
+    output_created = not output_existed and output_root.exists()
+    generated_created = not generated_existed and generated_root.exists()
+    if changed or output_created or generated_created:
         add_defect(
             defects, run, "load_readback",
-            "The suite does not write data-generation/output/ and does not replace the default warehouse file.",
-            field="warehouse", actual=f"before={before} after={after} output_created={created}",
+            "The suite does not write data-generation/output/ or data/generated/, "
+            "and it does not create or replace data/warehouse/dev_data_003 or data/warehouse/dev_data_004.",
+            field="warehouse",
+            actual=(
+                f"changed={changed} output_created={output_created} "
+                f"generated_created={generated_created}"
+            ),
         )
 
 

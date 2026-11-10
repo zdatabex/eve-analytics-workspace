@@ -1,8 +1,8 @@
 # data-generation
 
-Reproducible synthetic source data for the HubSpot, DealHub, Marketing, and Product contracts. One run writes JSON Lines and loads them into the isolated DuckDB schema `dev_data_003`.
+Reproducible synthetic source data for the HubSpot, DealHub, Marketing, and Product contracts. `generate` writes one JSON Lines drop per source system. `load` places each drop in schema `raw_<source_system>` inside the dataset warehouse file.
 
-The Python dependency for the warehouse is `duckdb`. The loader creates the schema and one table per source entity. It does not provision a remote warehouse.
+The Python dependency for the warehouse is `duckdb`. The loader creates one raw schema per source and one table per source entity. It does not provision a remote warehouse. `generate` writes no DuckDB file.
 
 ## Install
 
@@ -20,13 +20,15 @@ Python 3.11 or newer is required. Runtime dependencies are PyYAML and DuckDB. Th
 python3 -m eve_data_generation generate --config config/test.yaml
 ```
 
-`--output` overrides the dataset directory. The default directory is `output/<config stem>/`, so `config/test.yaml` writes `output/test/` and `config/default.yaml` writes `output/default/`.
+The default directory is `output/<config stem>/`, resolved from the package location. `config/test.yaml` writes `output/test/<source>/`. `config/default.yaml` writes `output/default/<source>/`. `config/scenarios.yaml` writes `output/scenarios/<source>/`. `config/scenarios-test.yaml` writes `output/scenarios-test/<source>/`. The working directory does not move this default.
+
+`--output` is the parent of the four source directories. It does not insert another dataset directory. From this directory, `--output ../data/generated` writes `data/generated/hubspot/`, `data/generated/dealhub/`, `data/generated/marketing/`, and `data/generated/product/`. A second generate to the same directory replaces those files and removes every other child.
 
 `config/default.yaml` is the development dataset. Its window is 2024-01-01 through 2025-07-01, eighteen months, with seed `1003`. `config/test.yaml` is the shorter dataset the component tests generate and load.
 
-Each source entity is one JSON Lines file named `<source_system>_<source_entity>.jsonl`. Decimal amounts are strings with two fraction digits. Integers are JSON integers. Dates and timestamps are strings. Timestamps use a `Z` suffix. Nulls are JSON null. Object keys are sorted. Rows are ordered by `observation_key`. A non-empty file ends with a newline. An entity with no rows is an empty file.
+The source directories are `hubspot/`, `dealhub/`, `marketing/`, and `product/`. Each one holds one JSON Lines file named `<source_entity>.jsonl` for every contract entity of that source. Examples are `hubspot/company.jsonl` and `marketing/campaign_performance.jsonl`. Decimal amounts are strings with two fraction digits. Integers are JSON integers. Dates and timestamps are strings. Timestamps use a `Z` suffix. Nulls are JSON null. Object keys are sorted. Rows are ordered by `observation_key`. A non-empty file ends with a newline. An entity with no rows is an empty file. This step writes no DuckDB file.
 
-`manifest.json` records `configuration_file`, `delivery_id`, `end_date`, `entities`, `seed`, and `start_date`. `delivery_id` is `dlv_<seed>`. The manifest has no wall-clock timestamp. The configured seed is the only source of randomness. The same seed, configuration, and generator version produce the same file bytes.
+Each source directory has one `manifest.json`. The four files share `configuration_file`, `delivery_id`, `seed`, `start_date`, and `end_date`. `entities` lists that source's row counts, keyed by `source_entity`. `delivery_id` is `dlv_<seed>`. The manifest has no wall-clock timestamp and no time component on the dates. The configured seed is the only source of randomness. The same seed, configuration, and generator version produce the same file bytes.
 
 If the inclusive date window cannot hold the ordered timestamps, generation fails with `date range cannot hold the ordered timestamps`.
 
@@ -36,13 +38,17 @@ If the inclusive date window cannot hold the ordered timestamps, generation fail
 python3 -m eve_data_generation load --config config/test.yaml
 ```
 
-`--dataset-dir` selects the JSON Lines directory. It defaults to the same `output/<config stem>/` path as generate. `--warehouse` selects the DuckDB file.
+`--dataset-dir` selects the drop directory `generate` wrote. It defaults to the same path as generate for the configuration file. `--warehouse` selects the DuckDB file.
 
-The loader reads `EVE_DATA_GENERATION_DUCKDB_PATH`. When that variable is unset or empty, the target is `output/warehouse/dev_data_003`. `data-generation/.env.example` contains that variable as an empty placeholder and no credentials. This package does not load a dotenv file. Export the variable in the shell when a different file is required.
+The warehouse file is selected in this order:
 
-The schema name is `dev_data_003` when the configuration omits `schema`. A file that sets `schema` loads that schema instead. Scenario files set `dev_data_004` and do not create `dev_data_003`. Table names are `src_<source_system>_<source_entity>`, for example `src_hubspot_company` and `src_marketing_campaign_performance`. Columns are the contract fields followed by `source_system`, `delivery_id`, and `ingested_at`. A load replaces each table. A second load of the same dataset does not append rows.
+1. `--warehouse`, when the command passes it.
+2. `EVE_DATA_GENERATION_DUCKDB_PATH`, when that variable is set to a non-empty value.
+3. `<repository>/data/warehouse/<name>`. `<name>` is the configuration `schema` value. When `schema` is absent, `<name>` is `dev_data_003`.
 
-The DuckDB file name can match the schema name. The loader qualifies every table as `<catalog>.dev_data_003.<table>` so those two names stay distinct.
+A baseline configuration loads `data/warehouse/dev_data_003`. A scenario configuration with `schema: dev_data_004` loads `data/warehouse/dev_data_004`. `data-generation/.env.example` keeps `EVE_DATA_GENERATION_DUCKDB_PATH=` as an empty placeholder and contains no credentials. This package does not load a dotenv file. Export the variable in the shell when a different file is required.
+
+Inside the selected file, `load` creates schema `raw_<source_system>` and table `<source_entity>`. Examples are `raw_hubspot.company` and `raw_marketing.campaign_performance`. Both warehouse files use these schema and table names. Columns are the contract fields followed by `source_system`, `delivery_id`, and `ingested_at`. One load replaces every entity table. A second load of the same drop does not append rows. A baseline load leaves `data/warehouse/dev_data_004` untouched. A scenario load leaves `data/warehouse/dev_data_003` untouched.
 
 ## Test
 
@@ -52,21 +58,18 @@ From this directory:
 python3 -m pytest tests
 ```
 
-The component tests generate `config/test.yaml`, check volumes, rates, contract shape, referential integrity, reproducibility, and the date window, and read the loaded rows back from `dev_data_003`.
+The component tests generate `config/test.yaml`, check volumes, rates, contract shape, referential integrity, reproducibility, and the date window, and read the loaded rows back from `raw_<source_system>.<source_entity>`.
 
 ## Output layout
 
-`output/` is gitignored. Generated datasets and the local warehouse file are not committed.
+`output/` is gitignored. `data/generated/` and `data/warehouse/` are created by the commands and are not committed.
 
 ```text
-output/
-  test/
-    hubspot_company.jsonl
-    ...
-    manifest.json
-  default/
-  warehouse/
-    dev_data_003
+data-generation/output/<dataset>/<source_system>/<source_entity>.jsonl
+data-generation/output/<dataset>/<source_system>/manifest.json
+data/generated/<source_system>/<source_entity>.jsonl
+data/warehouse/dev_data_003
+data/warehouse/dev_data_004
 ```
 
 ## Configuration
@@ -141,7 +144,7 @@ From this directory, the component tests are:
 python3 -m pytest tests
 ```
 
-A scenario load writes schema `dev_data_004`. It replaces table contents on reload. It does not create schema `dev_data_003`. Baseline loads still use `dev_data_003`. Generated files stay under `output/` and are not committed.
+`schema: dev_data_004` selects the warehouse file `data/warehouse/dev_data_004`. The raw schema names match the baseline file. A scenario load replaces table contents on reload and does not modify `data/warehouse/dev_data_003`. Baseline loads use `data/warehouse/dev_data_003`. Generated files under `output/` are not committed.
 
 ### Journeys
 
@@ -166,7 +169,7 @@ Journey counts and the sequences in this file decide companies, contacts, leads,
 | Key | Committed value | Behavior |
 |---|---|---|
 | `journeys` | 1 for each of the seven names | Selects this population. |
-| `schema` | `dev_data_004` | Schema the loader creates. Absent on baseline files, which keep `dev_data_003`. |
+| `schema` | `dev_data_004` | Warehouse file name. Selects `data/warehouse/dev_data_004`. Absent on baseline files, which use `data/warehouse/dev_data_003`. |
 | `ingest_lag_days` | 1 | Days added to `ingested_at` on a late immutable row. |
 | `late_event_count` | 1 | How many immutable rows arrive late. |
 | `expansion_seat_increase` | 1 | Seats added on `subscription_expanded`. |

@@ -1,4 +1,4 @@
-"""Load generated JSON Lines into an isolated development schema."""
+"""Load one ingestion drop per source into raw_<source_system>."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import duckdb
 
 from eve_data_generation.contracts import Contract, load_contracts
 from eve_data_generation.errors import GenerationError
-from eve_data_generation.paths import DEFAULT_WAREHOUSE, SCHEMA_NAME, WAREHOUSE_ENV
+from eve_data_generation.paths import DEFAULT_WAREHOUSE, WAREHOUSE_ENV
 
 _IDENT = re.compile(r"^[a-z][a-z0-9_]*$")
 _TYPES = {
@@ -26,13 +26,23 @@ _TYPES = {
 }
 
 
-def warehouse_path(explicit: str | Path | None = None) -> Path:
+def warehouse_path(explicit: str | Path | None = None, schema: str | None = None) -> Path:
+    """Select the DuckDB file.
+
+    ``--warehouse`` wins, then a non-empty ``EVE_DATA_GENERATION_DUCKDB_PATH``.
+    Otherwise the file is ``data/warehouse/<schema>``, or ``dev_data_003`` when
+    the configuration omits ``schema``. ``schema`` names that file. It is not a
+    DuckDB schema.
+    """
+
     if explicit is not None and str(explicit).strip():
         return Path(explicit)
     configured = os.environ.get(WAREHOUSE_ENV, "").strip()
-    if not configured:
+    if configured:
+        return Path(configured)
+    if schema is None:
         return DEFAULT_WAREHOUSE
-    return Path(configured)
+    return DEFAULT_WAREHOUSE.parent / _ident(schema)
 
 
 def _ident(value: str) -> str:
@@ -60,7 +70,7 @@ def _parse(value, field_type: str):
 
 
 def _read_jsonl(path: Path) -> list[dict]:
-    if not path.exists() or path.stat().st_size == 0:
+    if path.stat().st_size == 0:
         return []
     rows = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -74,36 +84,43 @@ def load_dataset(
     database: str | Path | None = None,
     schema_name: str | None = None,
 ) -> Path:
-    """Replace every source table in the requested schema.
+    """Replace every raw source table from the drop directory.
 
-    Baseline loads use ``dev_data_003``. A configuration that sets ``schema``
-    passes that name and does not create ``dev_data_003``.
+    ``schema_name`` selects the warehouse file when no explicit file or
+    environment path is set. Tables land in ``raw_<source_system>``.
     """
 
     contracts = load_contracts()
-    target = warehouse_path(database)
+    target = warehouse_path(database, schema_name)
     target.parent.mkdir(parents=True, exist_ok=True)
     connection = duckdb.connect(str(target))
     try:
-        schema = _ident(schema_name or SCHEMA_NAME)
         catalog = connection.execute("SELECT current_catalog()").fetchone()[0]
-        qualified_schema = f"{_quote(catalog)}.{_quote(schema)}"
-        connection.execute(f"CREATE SCHEMA IF NOT EXISTS {qualified_schema}")
+        grouped: dict[str, list[Contract]] = {}
         for contract in contracts.values():
-            _replace_table(connection, qualified_schema, contract, directory)
+            grouped.setdefault(contract.source_system, []).append(contract)
+        for source, source_contracts in grouped.items():
+            schema = _ident(f"raw_{source}")
+            qualified_schema = f"{_quote(catalog)}.{_quote(schema)}"
+            connection.execute(f"CREATE SCHEMA IF NOT EXISTS {qualified_schema}")
+            for contract in source_contracts:
+                _replace_table(connection, qualified_schema, contract, directory)
     finally:
         connection.close()
     return target
 
 
 def _replace_table(connection, qualified_schema: str, contract: Contract, directory: Path) -> None:
+    path = directory / contract.source_system / contract.file_name
+    if not path.is_file():
+        raise GenerationError(f"missing entity file {path}")
     table = _quote(_ident(contract.table_name))
     columns = []
     for field in contract.columns:
         nullability = "" if field.nullable else " NOT NULL"
         columns.append(f"{_quote(_ident(field.name))} {_TYPES[field.type]}{nullability}")
     connection.execute(f"CREATE OR REPLACE TABLE {qualified_schema}.{table} ({', '.join(columns)})")
-    rows = _read_jsonl(directory / contract.file_name)
+    rows = _read_jsonl(path)
     if not rows:
         return
     names = [field.name for field in contract.columns]

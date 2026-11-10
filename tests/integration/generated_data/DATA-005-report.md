@@ -10,7 +10,7 @@ This report records the validation of the four committed synthetic datasets. It 
 - Seed: 1003
 - Window: 2024-01-01 through 2025-07-01
 - Delivery id: dlv_1003
-- Load schema: dev_data_003
+- Warehouse file: dev_data_003
 - Generate command: `python3 -m eve_data_generation generate --config data-generation/config/default.yaml --output <temp directory>`
 
 | Entity | Rows |
@@ -39,7 +39,7 @@ This report records the validation of the four committed synthetic datasets. It 
 - Seed: 7
 - Window: 2024-03-01 through 2024-04-14
 - Delivery id: dlv_7
-- Load schema: dev_data_003
+- Warehouse file: dev_data_003
 - Generate command: `python3 -m eve_data_generation generate --config data-generation/config/test.yaml --output <temp directory>`
 
 | Entity | Rows |
@@ -68,7 +68,7 @@ This report records the validation of the four committed synthetic datasets. It 
 - Seed: 1004
 - Window: 2024-01-01 through 2025-07-01
 - Delivery id: dlv_1004
-- Load schema: dev_data_004
+- Warehouse file: dev_data_004
 - Generate command: `python3 -m eve_data_generation generate --config data-generation/config/scenarios.yaml --output <temp directory>`
 
 | Entity | Rows |
@@ -97,7 +97,7 @@ This report records the validation of the four committed synthetic datasets. It 
 - Seed: 4004
 - Window: 2024-01-01 through 2025-01-31
 - Delivery id: dlv_4004
-- Load schema: dev_data_004
+- Warehouse file: dev_data_004
 - Generate command: `python3 -m eve_data_generation generate --config data-generation/config/scenarios-test.yaml --output <temp directory>`
 
 | Entity | Rows |

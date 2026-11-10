@@ -16,8 +16,8 @@ from eve_data_generation.config import JOURNEY_NAMES, config_from_mapping, load_
 from eve_data_generation.contracts import load_contracts
 from eve_data_generation.dataset import build_dataset
 from eve_data_generation.errors import GenerationError
-from eve_data_generation.loader import load_dataset
-from eve_data_generation.paths import CONFIG_DIR
+from eve_data_generation.loader import load_dataset, warehouse_path
+from eve_data_generation.paths import CONFIG_DIR, DEFAULT_WAREHOUSE, WAREHOUSE_ENV
 from eve_data_generation.sampling import WINDOW_ERROR, inclusive_dates
 from eve_data_generation.writer import write_dataset
 
@@ -576,11 +576,19 @@ def test_timestamps_are_reproducible_and_the_manifest_has_no_clock(scenario_conf
     second = tmp_path / "two"
     write_dataset(build_dataset(scenario_config), contracts, first)
     write_dataset(build_dataset(scenario_config), contracts, second)
-    files = sorted(path.name for path in first.iterdir())
-    assert files == sorted(path.name for path in second.iterdir())
-    for name in files:
-        assert (first / name).read_bytes() == (second / name).read_bytes()
-    manifest = json.loads((first / "manifest.json").read_text(encoding="utf-8"))
+    left = {
+        path.relative_to(first).as_posix(): path.read_bytes()
+        for path in sorted(first.rglob("*"))
+        if path.is_file()
+    }
+    right = {
+        path.relative_to(second).as_posix(): path.read_bytes()
+        for path in sorted(second.rglob("*"))
+        if path.is_file()
+    }
+    assert left == right
+    assert sorted(path.name for path in first.iterdir()) == ["dealhub", "hubspot", "marketing", "product"]
+    manifest = json.loads((first / "hubspot" / "manifest.json").read_text(encoding="utf-8"))
     assert set(manifest) == {
         "configuration_file",
         "delivery_id",
@@ -591,6 +599,7 @@ def test_timestamps_are_reproducible_and_the_manifest_has_no_clock(scenario_conf
     }
     assert "T" not in manifest["start_date"]
     assert manifest["delivery_id"] == "dlv_4004"
+    assert set(manifest["entities"]) == {"activity", "company", "contact", "deal", "lead"}
 
 
 def test_short_window_uses_the_date_range_error():
@@ -601,7 +610,7 @@ def test_short_window_uses_the_date_range_error():
         build_dataset(config)
 
 
-def test_scenario_load_uses_dev_data_004(scenario_config, scenario_dataset, tmp_path):
+def test_scenario_load_uses_raw_schemas(scenario_config, scenario_dataset, tmp_path):
     directory = tmp_path / "dataset"
     contracts = load_contracts()
     write_dataset(scenario_dataset, contracts, directory)
@@ -610,12 +619,15 @@ def test_scenario_load_uses_dev_data_004(scenario_config, scenario_dataset, tmp_
     load_dataset(directory, database, scenario_config.schema)
     connection = duckdb.connect(str(database))
     schemas = {row[0] for row in connection.execute("SELECT schema_name FROM information_schema.schemata").fetchall()}
-    assert "dev_data_004" in schemas
+    assert {"raw_hubspot", "raw_dealhub", "raw_marketing", "raw_product"} <= schemas
+    assert "dev_data_004" not in schemas
     assert "dev_data_003" not in schemas
     catalog = connection.execute("SELECT current_catalog()").fetchone()[0]
-    table = f'"{catalog}"."dev_data_004"."src_hubspot_company"'
+    table = f'"{catalog}"."raw_hubspot"."company"'
     count = connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+    json_count = len((directory / "hubspot" / "company.jsonl").read_text(encoding="utf-8").splitlines())
     assert count == len(scenario_dataset.rows["hubspot.company"])
+    assert count == json_count
     connection.execute(f"DELETE FROM {table}")
     connection.close()
     load_dataset(directory, database, scenario_config.schema)
@@ -625,19 +637,53 @@ def test_scenario_load_uses_dev_data_004(scenario_config, scenario_dataset, tmp_
     assert restored == count
 
 
+def test_scenario_warehouse_file_leaves_the_baseline_file_unchanged(
+    scenario_config, scenario_dataset, tmp_path, monkeypatch,
+):
+    contracts = load_contracts()
+    scenario_dir = tmp_path / "scenario"
+    baseline_dir = tmp_path / "baseline"
+    write_dataset(scenario_dataset, contracts, scenario_dir)
+    baseline_dataset = build_dataset(load_config(CONFIG_DIR / "test.yaml"))
+    write_dataset(baseline_dataset, contracts, baseline_dir)
+    baseline_file = tmp_path / "dev_data_003"
+    scenario_file = tmp_path / "dev_data_004"
+    load_dataset(baseline_dir, baseline_file)
+    before = baseline_file.read_bytes()
+    monkeypatch.delenv(WAREHOUSE_ENV, raising=False)
+    assert warehouse_path(schema=scenario_config.schema) == DEFAULT_WAREHOUSE.parent / "dev_data_004"
+    load_dataset(scenario_dir, scenario_file, scenario_config.schema)
+    assert baseline_file.read_bytes() == before
+    baseline_schemas = _schemas(baseline_file)
+    scenario_schemas = _schemas(scenario_file)
+    raw = {"raw_hubspot", "raw_dealhub", "raw_marketing", "raw_product"}
+    assert raw <= baseline_schemas
+    assert raw <= scenario_schemas
+    assert "dev_data_003" not in baseline_schemas | scenario_schemas
+    assert "dev_data_004" not in baseline_schemas | scenario_schemas
+
+
 def test_cli_generate_and_load_scenario_schema(tmp_path, monkeypatch):
     output = tmp_path / "generated"
     database = tmp_path / "cli.duckdb"
     config = str(CONFIG_DIR / "scenarios-test.yaml")
     assert main(["generate", "--config", config, "--output", str(output)]) == 0
-    assert (output / "manifest.json").exists()
+    assert (output / "dealhub" / "manifest.json").is_file()
+    assert not (output / "manifest.json").exists()
     monkeypatch.setenv("EVE_DATA_GENERATION_DUCKDB_PATH", str(database))
     assert main(["load", "--config", config, "--dataset-dir", str(output)]) == 0
-    connection = duckdb.connect(str(database))
-    schemas = {row[0] for row in connection.execute("SELECT schema_name FROM information_schema.schemata").fetchall()}
-    connection.close()
-    assert "dev_data_004" in schemas
+    schemas = _schemas(database)
+    assert "raw_product" in schemas
+    assert "dev_data_004" not in schemas
     assert "dev_data_003" not in schemas
+
+
+def _schemas(path) -> set[str]:
+    connection = duckdb.connect(str(path))
+    try:
+        return {row[0] for row in connection.execute("SELECT schema_name FROM information_schema.schemata").fetchall()}
+    finally:
+        connection.close()
 
 
 def test_development_scenario_generates():
