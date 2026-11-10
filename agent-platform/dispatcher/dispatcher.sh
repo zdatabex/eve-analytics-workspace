@@ -202,16 +202,32 @@ dependencies_closed() {
 import json, re, sys
 body = sys.stdin.read()
 issues = json.loads(sys.argv[1])
-deps = re.findall(r"Depends On:\**\s*(DATA-\d+)", body)
+deps = re.findall(r"Depends On:\**\s*(DATA-\d+(?:-\d+)?)", body)
 by_ticket = {}
 for issue in issues:
-    match = re.match(r"(DATA-\d+)", issue["title"])
+    match = re.match(r"(DATA-\d+(?:-\d+)?)", issue["title"])
     if match:
         by_ticket[match.group(1)] = issue["state"]
 for dep in deps:
     if by_ticket.get(dep) != "CLOSED":
         raise SystemExit(1)
 ' "$ISSUES_JSON"
+}
+
+is_parent_epic() {
+  python3 -c '
+import json, re, sys
+ticket = sys.argv[1]
+issues = json.loads(sys.argv[2])
+match = re.match(r"DATA-(\d+)$", ticket)
+if not match:
+    raise SystemExit(1)
+child = re.compile(rf"^DATA-{match.group(1)}-\d+")
+for issue in issues:
+    if child.match(issue["title"]):
+        raise SystemExit(0)
+raise SystemExit(1)
+' "$1" "$ISSUES_JSON"
 }
 
 find_pr_number() {
@@ -342,7 +358,7 @@ decide_issue() {
   ISSUE_BODY="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["body"] or "")' <<<"$json")"
   ISSUE_STATE="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])' <<<"$json")"
   ISSUE_URL="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])' <<<"$json")"
-  TICKET="$(python3 -c 'import re,sys; m=re.match(r"(DATA-\d+)", sys.argv[1]); print(m.group(1) if m else "")' "$ISSUE_TITLE")"
+  TICKET="$(python3 -c 'import re,sys; m=re.match(r"(DATA-\d+(?:-\d+)?)", sys.argv[1]); print(m.group(1) if m else "")' "$ISSUE_TITLE")"
   STATUS="$(python3 -c 'import json,sys; labels=json.load(sys.stdin)["labels"]; print(next((item["name"] for item in labels if item["name"].startswith("status:")), ""))' <<<"$json")"
   SLUG="$(slugify "${ISSUE_TITLE#${TICKET}}")"
   ACTION="wait"
@@ -355,6 +371,11 @@ decide_issue() {
   WORKTREE=""
   PROMPT=""
   [[ -n "$TICKET" ]] || return 0
+  if is_parent_epic "$TICKET"; then
+    ACTION="wait"
+    TRIGGER="issue is a parent epic"
+    return 0
+  fi
   if [[ "$ISSUE_STATE" == "CLOSED" ]]; then
     return 0
   fi
@@ -408,21 +429,60 @@ needs_spec_successor() {
 import json
 import re
 import sys
-issues = []
+pattern = re.compile(r"DATA-(\d+)(?:-(\d+))?")
+parsed = []
 for issue in json.loads(sys.argv[1]):
-    match = re.match(r"DATA-(\d+)", issue["title"])
+    match = pattern.match(issue["title"])
     if not match:
         continue
     status = next((item["name"] for item in issue["labels"] if item["name"].startswith("status:")), "")
-    issues.append((int(match.group(1)), issue["number"], issue["state"], status, match.group(0)))
-issues.sort()
-by_number = {item[0]: item for item in issues}
-for number, issue_number, state, status, ticket in issues:
-    if state != "CLOSED":
+    parsed.append({
+        "parent": int(match.group(1)),
+        "child": int(match.group(2)) if match.group(2) is not None else None,
+        "number": issue["number"],
+        "state": issue["state"],
+        "status": status,
+    })
+epics = {item["parent"] for item in parsed if item["child"] is not None}
+
+def unlabeled_open(item):
+    return item is not None and item["state"] == "OPEN" and not item["status"]
+
+def find(parent, child):
+    for item in parsed:
+        if item["parent"] == parent and item["child"] == child:
+            return item
+    return None
+
+def first_child(parent):
+    kids = [
+        item for item in parsed
+        if item["parent"] == parent and item["child"] is not None and unlabeled_open(item)
+    ]
+    kids.sort(key=lambda item: item["child"])
+    return kids[0] if kids else None
+
+ordered = sorted(parsed, key=lambda item: (item["parent"], -1 if item["child"] is None else item["child"]))
+for item in ordered:
+    if item["state"] != "CLOSED":
         continue
-    nxt = by_number.get(number + 1)
-    if nxt and nxt[2] == "OPEN" and not nxt[3]:
-        print(nxt[1])
+    if item["child"] is not None:
+        nxt = find(item["parent"], item["child"] + 1)
+        if unlabeled_open(nxt):
+            print(nxt["number"])
+            raise SystemExit
+        continue
+    if item["parent"] in epics:
+        continue
+    nxt_parent = item["parent"] + 1
+    if nxt_parent in epics:
+        nxt = first_child(nxt_parent)
+    else:
+        nxt = find(nxt_parent, None)
+        if not unlabeled_open(nxt):
+            nxt = None
+    if nxt:
+        print(nxt["number"])
         raise SystemExit
 print("")
 PY
@@ -462,11 +522,21 @@ select_issue() {
 import json
 import re
 import sys
-rows = []
+pattern = re.compile(r"DATA-(\d+)(?:-(\d+))?")
+parsed = []
 for issue in json.loads(sys.argv[1]):
-    match = re.match(r"DATA-(\d+)", issue["title"])
-    if match and issue["state"] == "OPEN":
-        rows.append((int(match.group(1)), issue["number"]))
+    match = pattern.match(issue["title"])
+    if not match or issue["state"] != "OPEN":
+        continue
+    parent = int(match.group(1))
+    child = int(match.group(2)) if match.group(2) is not None else None
+    parsed.append((parent, child, issue["number"]))
+epics = {parent for parent, child, _ in parsed if child is not None}
+rows = [
+    ((parent, -1 if child is None else child), number)
+    for parent, child, number in parsed
+    if not (child is None and parent in epics)
+]
 for _, number in sorted(rows):
     print(number)
 PY

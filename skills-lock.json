@@ -1,11 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
     "using-dbt-for-analytics-engineering": {
       "source": "dbt-labs/dbt-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/dbt/skills/using-dbt-for-analytics-engineering/SKILL.md",
-      "computedHash": "59a854e12cce06d476279f3664e1913564666c3187842b3f7a99fabd987e14fa"
+      "computedHash": "38a65cf843b61e5748f13f39e68d1e023f2353e4ae0be25268524d659a1b63ab"
     }
   }
 }
