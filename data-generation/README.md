@@ -34,19 +34,24 @@ If the inclusive date window cannot hold the ordered timestamps, generation fail
 
 ## Load
 
+From this directory, write the development dataset into `data/`:
+
 ```bash
-python3 -m eve_data_generation load --config config/test.yaml
+python3 -m eve_data_generation generate --config config/default.yaml --output ../data/generated
+python3 -m eve_data_generation load --config config/default.yaml --dataset-dir ../data/generated --warehouse ../data/warehouse/dev_data_003
 ```
 
-`--dataset-dir` selects the drop directory `generate` wrote. It defaults to the same path as generate for the configuration file. `--warehouse` selects the DuckDB file.
+`--output`, `--dataset-dir`, and `--warehouse` are relative to the working directory. `--dataset-dir` selects the drop directory `generate` wrote. It defaults to the same path as generate for the configuration file.
 
 The warehouse file is selected in this order:
 
 1. `--warehouse`, when the command passes it.
 2. `EVE_DATA_GENERATION_DUCKDB_PATH`, when that variable is set to a non-empty value.
-3. `<repository>/data/warehouse/<name>`. `<name>` is the configuration `schema` value. When `schema` is absent, `<name>` is `dev_data_003`.
+3. `<package repository>/data/warehouse/<name>`. `<name>` is the configuration `schema` value. When `schema` is absent, `<name>` is `dev_data_003`.
 
-A baseline configuration loads `data/warehouse/dev_data_003`. A scenario configuration with `schema: dev_data_004` loads `data/warehouse/dev_data_004`. `data-generation/.env.example` keeps `EVE_DATA_GENERATION_DUCKDB_PATH=` as an empty placeholder and contains no credentials. This package does not load a dotenv file. Export the variable in the shell when a different file is required.
+That package repository is the checkout that contains the installed `eve_data_generation` package, the same root used for the default `output/<config stem>/` path. A shell in a different checkout does not move it. Pass `--warehouse` when the JSON Lines and the DuckDB file should land in the checkout you are in.
+
+A baseline configuration loads `data/warehouse/dev_data_003` under that root. A scenario configuration with `schema: dev_data_004` loads `data/warehouse/dev_data_004` there. `data-generation/.env.example` keeps `EVE_DATA_GENERATION_DUCKDB_PATH=` as an empty placeholder and contains no credentials. This package does not load a dotenv file. Export the variable in the shell when a different file is required.
 
 Inside the selected file, `load` creates schema `raw_<source_system>` and table `<source_entity>`. Examples are `raw_hubspot.company` and `raw_marketing.campaign_performance`. Both warehouse files use these schema and table names. Columns are the contract fields followed by `source_system`, `delivery_id`, and `ingested_at`. One load replaces every entity table. A second load of the same drop does not append rows. A baseline load leaves `data/warehouse/dev_data_004` untouched. A scenario load leaves `data/warehouse/dev_data_003` untouched.
 
@@ -130,7 +135,7 @@ HubSpot identifiers are numeric strings beginning at `10000001`. DealHub identif
 
 `config/scenarios.yaml` is the development journey dataset. Its seed is `1004` and its window is 2024-01-01 through 2025-07-01. `config/scenarios-test.yaml` is the dataset the scenario component tests generate and load. Its seed is `4004`. Its window is longer than 180 days and shorter than the development window, so a renewal can add `term_days` to `term_end` and `end_date` and still land inside the window. Both files set every journey count to 1. `term_days` is 180.
 
-Generate and load use the same commands as the baseline sampler:
+Generate and load follow the same path rules as the baseline sampler. Without `--output` or `--warehouse`, files land next to the installed package. Without `--warehouse`, `schema: dev_data_004` writes `<package repository>/data/warehouse/dev_data_004`.
 
 ```bash
 python3 -m eve_data_generation generate --config config/scenarios.yaml
@@ -144,7 +149,7 @@ From this directory, the component tests are:
 python3 -m pytest tests
 ```
 
-`schema: dev_data_004` selects the warehouse file `data/warehouse/dev_data_004`. The raw schema names match the baseline file. A scenario load replaces table contents on reload and does not modify `data/warehouse/dev_data_003`. Baseline loads use `data/warehouse/dev_data_003`. Generated files under `output/` are not committed.
+`schema: dev_data_004` selects the warehouse file `<package repository>/data/warehouse/dev_data_004` unless `--warehouse` is set. The raw schema names match the baseline file. A scenario load replaces table contents on reload and does not modify `data/warehouse/dev_data_003`. Baseline loads use `data/warehouse/dev_data_003` beside the same package. Generated files under `output/` are not committed.
 
 ### Journeys
 
