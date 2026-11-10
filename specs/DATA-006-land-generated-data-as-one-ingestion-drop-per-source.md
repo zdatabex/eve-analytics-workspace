@@ -16,6 +16,7 @@ requires_approval: true
 allowed_paths:
   - data-generation/
   - .gitignore
+  - tests/integration/generated_data/
 excluded_paths:
   - contracts/
   - warehouse/
@@ -23,7 +24,8 @@ excluded_paths:
   - orchestration/
   - infrastructure/
   - agent-platform/
-  - tests/
+  - tests/e2e/
+  - tests/integration/README.md
   - docs/
   - specs/
 contracts:
@@ -31,7 +33,7 @@ contracts:
   affected_contracts: []
 testing:
   component_tests: true
-  integration_tests: false
+  integration_tests: true
   end_to_end_tests: false
 environment:
   isolated_schema: true
@@ -62,7 +64,7 @@ This task replaces that landing layout. One generate run still has one `delivery
 
 ## Scope
 
-The implementation changes the writer, the loader, their paths, the component tests, and the generator usage documentation. It covers:
+The implementation changes the writer, the loader, their paths, the component tests, the generator usage documentation, and the generated-data validation suite. It covers:
 
 1. `generate` writes `<output>/<source_system>/<source_entity>.jsonl` and one `manifest.json` per source. Sources stay `hubspot`, `dealhub`, `marketing`, and `product`. `generate` creates those directories. It writes no DuckDB file.
 2. Each manifest shares `delivery_id`, seed, and the date window, and lists that source's row counts.
@@ -71,8 +73,9 @@ The implementation changes the writer, the loader, their paths, the component te
 5. Inside each file, `load` creates schema `raw_<source_system>` and table `<source_entity>`, for example `raw_hubspot.company`. A load replaces that source's tables.
 6. The configuration `schema` value selects the warehouse file. DuckDB schema names are `raw_<source_system>` in both files.
 7. `data-generation` tests and `data-generation/README.md` describe `generate` and `load` as those two steps.
+8. `tests/integration/generated_data/` asserts that same layout. `python3 -m pytest tests/integration/generated_data` passes. The suite README names `data/warehouse/dev_data_003` and `data/warehouse/dev_data_004`. A passing run rewrites `DATA-005-report.md`, and the committed file matches that rewrite.
 
-`components` lists `data-generation` only. A specification that lists more than one component requires integration tests. This specification lists one, so `testing.integration_tests` is false. The root `.gitignore` change that keeps `data/warehouse/` untracked is repository hygiene for this component's output. It is not a second component.
+`components` lists `data-generation` only. `tests/` is not a component in `workspace.yaml`. `testing.integration_tests` is true because this change alters the landing contract the existing suite asserts. The rule that more than one component requires integration tests still holds. It does not forbid the flag for a single component. The root `.gitignore` change that keeps `data/warehouse/` untracked is repository hygiene for this component's output. It is not a second component.
 
 The baseline sampler and the named journeys stay. `generate` owns the JSON Lines layout. `load` owns the DuckDB schemas.
 
@@ -84,8 +87,8 @@ Later issues own the work in the table below.
 | DATA-002 | Source contracts. Merged. This task reads `contracts/source/` and does not change it. |
 | DATA-003 | Baseline generators, `config/default.yaml`, `config/test.yaml`, and the sampler. Merged. This task keeps that sampler and changes the writer and loader. |
 | DATA-004 | Named GTM lifecycle journeys and `config/scenarios.yaml` and `config/scenarios-test.yaml`. Merged. This task keeps those journeys. |
-| DATA-005 | The validation suite under `tests/integration/generated_data/`. Merged. This task does not edit that suite. |
-| DATA-006 | Per-source JSON Lines drops, per-source manifests, raw schemas, the dataset warehouse files, component tests, and generator usage documentation. |
+| DATA-005 | The validation suite under `tests/integration/generated_data/`. Merged. This task points that suite at the landing layout below. Population, key, relationship, lifecycle, temporal, commercial, usage, and journey checks stay. |
+| DATA-006 | Per-source JSON Lines drops, per-source manifests, raw schemas, the dataset warehouse files, component tests, the generated-data validation suite, and generator usage documentation. |
 | Later warehouse work | dbt sources, staging, intermediate models, and marts, owned by `analytics-engineer`. |
 | Later analytics work | Hex and Omni assets, owned by `analyst`. |
 
@@ -100,6 +103,9 @@ The implementation adds and updates files under `data-generation/`, and updates 
 - `data-generation/README.md`, documenting `generate` and `load` as the two steps below.
 - The comment in `data-generation/.env.example`, so the empty placeholder describes the warehouse file selected by this specification.
 - The root `.gitignore` rule that ignores every file under `data/warehouse/`.
+- `tests/integration/generated_data/`, pointed at the drop paths, one manifest per source, schemas `raw_<source_system>`, tables `<source_entity>`, and warehouse file selection from `schema`.
+- `tests/integration/generated_data/README.md`, naming `data/warehouse/dev_data_003` and `data/warehouse/dev_data_004`.
+- `tests/integration/generated_data/DATA-005-report.md`, rewritten by a passing `python3 -m pytest tests/integration/generated_data`.
 
 `data-generation/.gitignore` already ignores `data-generation/output/`. Generated datasets under that directory stay untracked. `config/default.yaml`, `config/test.yaml`, `config/scenarios.yaml`, and `config/scenarios-test.yaml` stay as they are. Scenario files keep `schema: dev_data_004`. Baseline files keep `schema` absent.
 
@@ -119,7 +125,7 @@ The output directory contains only these source directories:
 
 Each source directory contains one `<source_entity>.jsonl` file for every contract entity of that source, plus `manifest.json`. An entity with no rows is an empty file. A non-empty file ends with a newline. `generate` creates the source directories. The directory contains no DuckDB file and no `warehouse/` directory.
 
-The current contract inventory is the file set. The writer follows `contracts/source/` if that inventory is the set below.
+The writer and the loader discover entities from `contracts/source/`. The table is the inventory at specification time. The merged YAML wins where this specification summarizes a contract.
 
 | Source | `source_entity` files | Raw table |
 |---|---|---|
@@ -134,7 +140,7 @@ Examples: `hubspot/company.jsonl` loads into `raw_hubspot.company`. `marketing/c
 
 The default output directory is `data-generation/output/<config stem>/`, resolved from the package location. `config/test.yaml` writes `data-generation/output/test/<source>/`. `config/default.yaml` writes `data-generation/output/default/<source>/`. `config/scenarios.yaml` writes `data-generation/output/scenarios/<source>/`. `config/scenarios-test.yaml` writes `data-generation/output/scenarios-test/<source>/`. The working directory does not move this default.
 
-`--output` is the parent of the four source directories. It does not insert another dataset directory. From `data-generation/`, `--output ../data/generated` writes `data/generated/hubspot/`, `data/generated/dealhub/`, `data/generated/marketing/`, and `data/generated/product/`. A second generate to the same `--output` replaces those files.
+`--output` is the parent of the four source directories. It does not insert another dataset directory. From `data-generation/`, `--output ../data/generated` writes `data/generated/hubspot/`, `data/generated/dealhub/`, `data/generated/marketing/`, and `data/generated/product/`. A second generate to the same `--output` replaces those files. `generate` removes every other child of the selected output directory, including the retired flat `<source_system>_<source_entity>.jsonl` files and a dataset-level `manifest.json`. After the command, that directory contains only `hubspot/`, `dealhub/`, `marketing/`, and `product/`.
 
 `generate` writes only under the selected output directory. A run whose output is `data/generated` creates `data/generated/`. It leaves `data/warehouse/` absent.
 
@@ -266,26 +272,50 @@ Tests that open DuckDB pass `--warehouse` or `EVE_DATA_GENERATION_DUCKDB_PATH` w
 
 `data-generation/output/` stays ignored. The root `.gitignore` ignores `data/generated/` and `data/warehouse/`. The test that reads ignore rules asserts both.
 
+## Validation suite
+
+`tests/integration/generated_data/` is in this task. The suite still generates the four committed configurations through the existing generate and load commands, checks the published population and contract rules, and writes `DATA-005-report.md`. It still passes `--output`, `--dataset-dir`, and `--warehouse` under a temporary directory. It still parses `contracts/source/` itself and does not call `eve_data_generation.validate`. It adds no Python dependency. Population, key, relationship, lifecycle, temporal, commercial, usage, and journey checks stay. `ASSUMPTIONS.md` stays. `tests/integration/README.md` stays. In-memory population-rule fixtures keep their row checks. They do not require a DuckDB schema named `dev_data_003` or `dev_data_004`.
+
+The landing assertions follow this specification:
+
+- The output directory's children are `hubspot/`, `dealhub/`, `marketing/`, and `product/`. Each source directory holds `<source_entity>.jsonl` and `manifest.json`. Flat `<source_system>_<source_entity>.jsonl` files and a dataset-level `manifest.json` are absent. Apollo and Clay files stay absent.
+- Each source manifest has the keys in the Manifests section. The four manifests share `configuration_file`, `delivery_id`, `seed`, `start_date`, and `end_date`. `entities` is keyed by that source's `source_entity`, and the counts match that source's files. The suite resolves a contract file as `<source_system>/<source_entity>.jsonl`. `model.py` `file_name` follows that path.
+- Two generations of the same configuration produce the same bytes for every JSON Lines file and every source manifest, including files nested under the source directories.
+- The load writes schema `raw_<source_system>` and table `<source_entity>`. `model.py` `table_name` is `<source_entity>`. Columns and values still match the JSON Lines, including nulls and exact decimals. The temporary file has no schema named `dev_data_003` or `dev_data_004` and no table named `src_<source_system>_<source_entity>`. It does not create `dev_data_005`.
+- The configuration `schema` value selects the warehouse file: `dev_data_003` when `schema` is absent, and `dev_data_004` when `schema` is `dev_data_004`. The suite still passes `--warehouse`, so the pytest run loads a temporary file. A baseline file still has no `schema` key. A scenario file still has `schema: dev_data_004`. Those checks name the warehouse file. They do not require a DuckDB schema of that name.
+- A second load of `test.yaml` into the same temporary file replaces the raw tables.
+- The suite does not write `data-generation/output/` or `data/generated/`, and it does not create or replace `data/warehouse/dev_data_003` or `data/warehouse/dev_data_004`. The retired path `data-generation/output/warehouse/dev_data_003` is not the warehouse file the suite watches.
+
+`tests/integration/generated_data/README.md` states that the suite leaves `data/warehouse/dev_data_003` and `data/warehouse/dev_data_004` in place, and that it does not write `data-generation/output/`.
+
+From the repository root, with `data-generation` installed editable and its `dev` extra:
+
+```bash
+python3 -m pytest tests/integration/generated_data
+```
+
+That command exits zero. It rewrites `tests/integration/generated_data/DATA-005-report.md`. The committed file matches that rewrite. The report has no wall-clock timestamp. Each dataset section records `Warehouse file: dev_data_003` or `Warehouse file: dev_data_004`, the file the configuration `schema` value selects. Entity rows stay labeled by contract id. The counts are the counts the unchanged sampler and journeys produce.
+
 ## Constraints
 
 - Stay inside `allowed_paths`.
 - `contracts.changes_required` is false. Read `contracts/source/` and do not edit it. Contract fields stay unchanged.
-- One owning agent, `data-engineer`, changes the writer, the loader, the component tests, the README, the env example comment, and the root warehouse ignore rule.
+- One owning agent, `data-engineer`, changes the writer, the loader, the component tests, the README, the env example comment, the root warehouse ignore rule, and `tests/integration/generated_data/`.
 - Follow the data-generation skill. Keep source generation free of canonical transformation. Keep the baseline sampler and the named journeys. Keep volumes, rates, and catalogs in the existing YAML files.
 - Follow the data-modeling skill for landing grain. One raw schema is one source system. One table is one source entity. The table grain is that entity's contract grain. Source identifiers stay source identifiers.
 - Follow the data-quality skill for the component tests. Failures name the path, the manifest field, or the table. A reload check compares counts with the drop. Tests do not drop rows to make a count match.
 - The root `.gitignore` change ignores `data/warehouse/` as a directory. `/data/generated/` is already ignored. No other ignore rule changes.
 - Do not commit files under `data/generated/` or `data/warehouse/`. Do not add either directory to the repository.
-- Do not edit `tests/integration/`. The DATA-005 suite still describes the flat `<source_system>_<source_entity>.jsonl` names, one dataset-level manifest, `src_*` tables, and DuckDB schemas `dev_data_003` and `dev_data_004`. Updating that suite is later work. This task does not change those files to match the new layout, and it does not keep the old layout in place for that suite.
-- Do not add dbt sources. Do not edit `warehouse/`, `analytics/`, `orchestration/`, `infrastructure/`, `docs/`, `agent-platform/`, or `specs/`.
+- Update `tests/integration/generated_data/` so its landing checks match this specification. Leave `ASSUMPTIONS.md` and `tests/integration/README.md` unchanged. Do not edit `tests/e2e/`.
+- Do not add dbt sources. Do not edit `warehouse/`, `analytics/`, `orchestration/`, `infrastructure/`, `docs/`, `agent-platform/`, or `specs/`. `contracts/` stays unchanged.
 - Do not generate Apollo or Clay records.
 - Human approval is required. `delivery.deployment_required` is false.
 - `environment.isolated_schema` is true. Isolation is the warehouse file. Baseline rows land in `data/warehouse/dev_data_003`. Scenario rows land in `data/warehouse/dev_data_004`. `environment.schema_prefix` stays `dev` because those file names keep that prefix. The schemas inside each file are `raw_<source_system>`.
-- `testing.component_tests` is true. `testing.integration_tests` and `testing.end_to_end_tests` are false.
+- `testing.component_tests` is true. `testing.integration_tests` is true because the landing contract the existing suite asserts has changed. `testing.end_to_end_tests` is false. `components` stays `data-generation`.
 
 ## Acceptance criteria
 
-- [ ] The implementation changes files only under `data-generation/` and the root `.gitignore` warehouse rule. `config/default.yaml`, `config/test.yaml`, `config/scenarios.yaml`, and `config/scenarios-test.yaml` are unchanged.
+- [ ] The implementation changes files only under `data-generation/`, `tests/integration/generated_data/`, and the root `.gitignore` warehouse rule. `config/default.yaml`, `config/test.yaml`, `config/scenarios.yaml`, and `config/scenarios-test.yaml` are unchanged. `ASSUMPTIONS.md` is unchanged.
 - [ ] `data/generated/` and `data/warehouse/` are absent until the commands run, and neither directory is committed.
 - [ ] `generate` writes `hubspot/`, `dealhub/`, `marketing/`, and `product/`, one `<source_entity>.jsonl` per contract entity, and one `manifest.json` per source. It writes no DuckDB file.
 - [ ] The default directory is `data-generation/output/<config stem>/<source_system>/`. `--output ../data/generated` from `data-generation/` fills `data/generated/<source_system>/`.
@@ -296,7 +326,9 @@ Tests that open DuckDB pass `--warehouse` or `EVE_DATA_GENERATION_DUCKDB_PATH` w
 - [ ] Contract fields are unchanged. `contracts/` is unchanged. dbt sources are not added.
 - [ ] The baseline sampler and the named journeys still run for their existing configuration files. `python3 -m pytest tests` from `data-generation` passes.
 - [ ] `data-generation/README.md` documents `generate` and `load` as the two steps, the drop layout, the manifests, the warehouse files, and the raw schema and table names.
-- [ ] `tests/integration/`, `warehouse/`, `analytics/`, `orchestration/`, `infrastructure/`, `docs/`, and `specs/` are unchanged.
+- [ ] `python3 -m pytest tests/integration/generated_data` from the repository root exits zero. The suite reads `<source_system>/<source_entity>.jsonl` and one manifest per source, keys each manifest `entities` map by that source's `source_entity`, loads `raw_<source_system>.<source_entity>`, and treats `schema` as the warehouse file name `dev_data_003` or `dev_data_004`.
+- [ ] That run rewrites `tests/integration/generated_data/DATA-005-report.md`, and the committed file matches the rewrite. Each dataset section records `Warehouse file: dev_data_003` or `Warehouse file: dev_data_004`. The suite README names those two files as the warehouse files the run leaves in place. The run does not create or replace `data/generated/`, `data/warehouse/dev_data_003`, `data/warehouse/dev_data_004`, or `data-generation/output/`.
+- [ ] `tests/e2e/`, `tests/integration/README.md`, `warehouse/`, `analytics/`, `orchestration/`, `infrastructure/`, `docs/`, `contracts/`, and `specs/` are unchanged.
 
 ## Execution notes
 
@@ -304,10 +336,10 @@ Implement this specification only after it has merged and the issue label is `st
 
 Read the data-generation skill before changing the writer, the loader, and the output layout. Read the data-modeling skill before treating a raw table as anything other than the source entity. Read the data-quality skill before writing the path, manifest, schema, and reload tests.
 
-Read `specs/DATA-003-implement-synthetic-data-generators.md` and `specs/DATA-004-implement-gtm-lifecycle-scenarios.md` for the sampler, the journeys, the JSON Lines encoding, and the population hook. Read `data-generation/README.md`, `data-generation/src/eve_data_generation/writer.py`, `loader.py`, `cli.py`, and `paths.py` before changing them. Keep `baseline_population` and the scenario population. Change the writer layout and the loader's file selection and schema names. Update the tests that expect a flat directory, one manifest at the dataset root, `src_*` tables, or a DuckDB schema named `dev_data_003` or `dev_data_004`.
+Read `specs/DATA-003-implement-synthetic-data-generators.md` and `specs/DATA-004-implement-gtm-lifecycle-scenarios.md` for the sampler, the journeys, the JSON Lines encoding, and the population hook. Read `specs/DATA-005-validate-generated-data.md` for the checks that stay. Read `data-generation/README.md`, `data-generation/src/eve_data_generation/writer.py`, `loader.py`, `cli.py`, and `paths.py` before changing them. Read `tests/integration/generated_data/model.py`, `quality.py`, `validate_generated.py`, `README.md`, and `DATA-005-report.md` before pointing the suite at the new layout. Keep `baseline_population` and the scenario population. Change the writer layout and the loader's file selection and schema names. Update the component tests and the suite checks that expect a flat directory, one manifest at the dataset root, `src_*` tables, a DuckDB schema named `dev_data_003` or `dev_data_004`, or the warehouse path `data-generation/output/warehouse/dev_data_003`.
 
-`generate` owns the JSON Lines layout. `load` owns the DuckDB schemas. Do not edit `contracts/`. Do not add dbt sources. Do not edit `tests/integration/`.
+`generate` owns the JSON Lines layout. `load` owns the DuckDB schemas. The suite asserts that layout. Do not edit `contracts/`. Do not add dbt sources. Do not edit `tests/e2e/` or `tests/integration/README.md`.
 
-Component tests run locally. They do not require a remote warehouse. No integration test, end-to-end test, or deployment is required for this task.
+Component tests and `python3 -m pytest tests/integration/generated_data` run locally. They do not require a remote warehouse. No end-to-end test or deployment is required for this task.
 
-Validation of this task is `python3 -m pytest tests` from `data-generation`, plus a review of the acceptance criteria. Human approval is required before merge.
+Validation of this task is `python3 -m pytest tests` from `data-generation` and `python3 -m pytest tests/integration/generated_data` from the repository root, plus a review of the acceptance criteria. Human approval is required before merge.
