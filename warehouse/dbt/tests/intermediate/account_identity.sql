@@ -82,6 +82,7 @@ ordered_product_firms as (
 
 -- Walk HubSpot observations in time order. A blank domain matches nothing.
 -- Once a firm is a duplicate, a later domain change does not clear or move that link.
+-- Demoting a survivor re-points firms that already linked to it onto the earlier survivor.
 company_walk as (
 
     select
@@ -166,6 +167,26 @@ company_walk as (
                             creation_rank := c.creation_rank,
                             became_duplicate_at := prepared.observed_at,
                             duplicate_from_first := false
+                        )
+                    when prepared.match_id is not null
+                        and not c.is_survivor
+                        and prepared.self_is_survivor
+                        and prepared.self_rank < prepared.match_rank
+                        and prepared.primary_domain is not null
+                        and c.survivor_id = prepared.match_id
+                        then struct_update(
+                            c,
+                            survivor_id := prepared.hubspot_company_id
+                        )
+                    when prepared.match_id is not null
+                        and not c.is_survivor
+                        and prepared.self_is_survivor
+                        and prepared.self_rank > prepared.match_rank
+                        and prepared.primary_domain is not null
+                        and c.survivor_id = prepared.hubspot_company_id
+                        then struct_update(
+                            c,
+                            survivor_id := prepared.match_id
                         )
                     else c
                 end

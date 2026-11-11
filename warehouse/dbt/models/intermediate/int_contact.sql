@@ -64,6 +64,7 @@ latest_contact_observation as (
 
 -- Walk contact observations in time order. A blank email matches nothing.
 -- Once a person is a duplicate, a later email change does not clear or move that link.
+-- Demoting a survivor re-points people that already linked to that person onto the earlier survivor.
 contact_walk as (
 
     select
@@ -148,6 +149,26 @@ contact_walk as (
                             creation_rank := c.creation_rank,
                             became_duplicate_at := prepared.observed_at,
                             duplicate_from_first := false
+                        )
+                    when prepared.match_id is not null
+                        and not c.is_survivor
+                        and prepared.self_is_survivor
+                        and prepared.self_rank < prepared.match_rank
+                        and prepared.email_normalized is not null
+                        and c.survivor_id = prepared.match_id
+                        then struct_update(
+                            c,
+                            survivor_id := prepared.hubspot_contact_id
+                        )
+                    when prepared.match_id is not null
+                        and not c.is_survivor
+                        and prepared.self_is_survivor
+                        and prepared.self_rank > prepared.match_rank
+                        and prepared.email_normalized is not null
+                        and c.survivor_id = prepared.hubspot_contact_id
+                        then struct_update(
+                            c,
+                            survivor_id := prepared.match_id
                         )
                     else c
                 end
