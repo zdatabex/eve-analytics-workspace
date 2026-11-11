@@ -45,14 +45,18 @@ description: Reviews implementation quality, architecture, data correctness, tes
 
 ## Review Output
 
-Report findings with:
+Report findings in this shape only. Write `None.` when a section is empty. A blocking item states the failing rule and the required change in at most four sentences. A suggestion is one sentence. Do not list files that were read, restate checks that passed, or repeat the status label.
 
-- Severity
-- Affected file and location
-- Description of the issue
-- Potential impact
-- Recommended resolution
+## Blocking
 
-Distinguish blocking issues from suggestions.
+- `path:line` — The failing rule and the required change, in at most four sentences.
+
+## Suggestions
+
+- `path:line` — One sentence.
+
+End with exactly one of these lines and nothing after it:
+Blocking findings remain
+No blocking findings remain
 
 Do not silently modify the implementation being reviewed.

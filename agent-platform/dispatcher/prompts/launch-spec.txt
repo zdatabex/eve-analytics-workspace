@@ -4,7 +4,8 @@ Issue: {{ISSUE_URL}}
 Branch: {{BRANCH}}
 Worktree: {{WORKTREE}}
 Read the issue, .claude/agents/{{AGENT}}.md, and agent-platform/templates/spec.md.
+Read every skill named in that agent file before writing the specification. The specification adopts those rules. It does not invent a second structure.
 Create the spec worktree with ./scripts/worktree.sh create spec {{TICKET}} {{SLUG}}.
 Write specs/{{TICKET}}-{{SLUG}}.md on that branch.
-Open a specification pull request and set status:spec-review.
+Open a specification pull request titled `{{TICKET}} spec: <issue title without the ticket id>` and set status:spec-review.
 Do not implement. Do not merge.
