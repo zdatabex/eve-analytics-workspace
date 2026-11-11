@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: marketing
+    description: Raw Marketing source records landed by DATA-006 without transformation.
+    schema: raw_marketing
+    tables:
+      - name: campaign
+      - name: campaign_performance
+      - name: touch

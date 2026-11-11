@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: hubspot
+    description: Raw HubSpot source records landed by DATA-006 without transformation.
+    schema: raw_hubspot
+    tables:
+      - name: company
+      - name: contact
+      - name: lead
+      - name: deal
+      - name: activity
