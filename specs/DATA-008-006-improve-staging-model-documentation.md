@@ -206,8 +206,8 @@ Closed values use these words:
 These distinctions stay in the column sentence that owns them:
 
 - `hubspot_lifecycle_stage` is HubSpot's own lifecycle label, and those words are not limited to prospect, customer, or former customer.
-- The firm-relationship owner on the HubSpot company and the deal owner are different people.
-- `expected_close_date` and the contract start date are different days.
+- The firm-relationship owner on the HubSpot company and the deal owner are separate owners and may match or differ.
+- `expected_close_date` and the contract start date are separate dates and may match or differ.
 - `created_at` stays the time the lead or deal was created. `observed_at` is when that recording was taken. `occurred_at`, `booked_at`, `performance_date`, and the term dates are the other times, each named for the event it marks.
 - A campaign id on a HubSpot lead, a subscription id on a HubSpot deal, and a HubSpot id stored on a DealHub or Marketing row is that other system's id.
 - `dealhub_subscription_id` on a HubSpot deal is the subscription an expansion or renewal targets. New business leaves it blank.
