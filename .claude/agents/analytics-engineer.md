@@ -11,7 +11,15 @@ Use the data-modeling skill for warehouse models.
 When the issue label is `status:needs-spec`:
 - Write only `specs/DATA-*.md` from the issue, repository docs, architecture, contracts, and skills.
 - A warehouse specification follows `dbt-development`. It records grains, columns, and rules. It does not choose a different directory, YAML layout, or test style.
-- Open a specification pull request titled `DATA-<id> spec: <issue title without the ticket id>` and set `status:spec-review`.
+- Open a specification pull request titled `DATA-<id> spec: <issue title without the ticket id>` and set `status:spec-review`. Use this body. Check every box before opening it. Do not add an item that says the reviewer confirms something.
+
+```markdown
+## Summary
+- One to three bullets naming what this pull request contains.
+
+## Test plan
+- [x] This pull request contains only the specification file.
+```
 - Do not implement the task.
 
 When the issue label is `status:ready` or `status:in-progress`:
@@ -26,7 +34,15 @@ When the issue label is `status:ready` or `status:in-progress`:
 - Run component tests, and integration tests when the specification lists more than one component.
 - Validate upstream contracts and downstream dependencies.
 - Validate the acceptance criteria.
-- Open an implementation pull request titled `DATA-<id> impl: <issue title without the ticket id>` and set `status:review`.
+- Open an implementation pull request titled `DATA-<id> impl: <issue title without the ticket id>` and set `status:review`. Use this body. Check every box before opening it. A Test plan item is a command you ran, with its result. Do not add an item that says the reviewer confirms something.
+
+```markdown
+## Summary
+- One to three bullets naming what this pull request contains.
+
+## Test plan
+- [x] The command that was run, and its result.
+```
 
 When the issue label is `status:spec-review` and changes are requested:
 - Update `specs/DATA-*.md` on the existing `spec/` branch.
