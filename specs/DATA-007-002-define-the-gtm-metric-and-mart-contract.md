@@ -88,7 +88,7 @@ Orchestration, infrastructure, deployment, source contracts, and data generation
 
 ## Deliverables
 
-Create `docs/data-model/metric-contract.md`. Add the two pointer sentences named under Pointers. Those edits are the complete file set.
+Create `docs/data-model/metric-contract.md`. Add the pointer sentences named under Pointers. Those edits are the complete file set.
 
 The contract uses the canonical names in `entities.md`. It does not assign dbt model filenames, SQL, or warehouse types. A mart name in this contract is the business mart that owns the metric.
 
@@ -96,7 +96,11 @@ The contract uses the canonical names in `entities.md`. It does not assign dbt m
 
 The contract states these rules once and uses them in every formula:
 
-- Metrics count surviving entities. A row with a `surviving_<entity>_id` is excluded. Lead, contact, and opportunity references resolve to the surviving lead, contact, and opportunity before a match.
+- Metrics count surviving entities. A row with a `surviving_<entity>_id` is excluded.
+- Before every metric match and rollup, resolve `lead_id`, `contact_id`, `opportunity_id`, `account_id`, `subscription_id`, and `product_user_id` through the stored `surviving_<entity>_id` on the referenced row. The resolution is one hop: the survivor has no survivor of its own. That is the same rule `source-mapping.md` already uses for lead, contact, opportunity, account, subscription, and product user. Follow that survivor link only. Do not copy a duplicate's source identifier onto the survivor, and do not rewrite the child row.
+- A later Type 2 change of `account_id` on a product user does not move historical `product_usage` or `product_outcome` onto that later account. Those rows keep the account stored on them, resolved only through `surviving_account_id`.
+- Each surviving opportunity is counted on its surviving account, the account reached by resolving the opportunity's stored `account_id`. That assignment is what makes the scorecard equality true: the sum of account `pipeline_amount` equals the sum of `pipeline_amount` across surviving opportunities.
+- The lifecycle-event column list stays a copy of the stored keys. This resolution is a metric rule. It does not change the foreign keys the column contract copies from the event catalog.
 - The pipeline amount of an opportunity is `opportunity.amount` on the effective-dated row in effect at the as-of time. `effective_start` is inclusive and `effective_end` is exclusive. The current row is the row whose `effective_end` is open. `quoted_amount`, `total_contract_value`, `booking_amount`, `recurring_amount`, and annualized ARR are not the pipeline amount.
 - The current sales and marketing marts use the current opportunity row. An account-month reading uses the row in effect at month end.
 - Month membership is the calendar month of the stored timestamp. Month end is the last moment of that calendar month. This contract does not add a timezone conversion or a calendar entity.
@@ -139,8 +143,9 @@ Each metric is defined once. The contract gives each metric a section with its n
 
 - Grain: the sum is defined on `booking`. The sales mart stores it at opportunity grain: one row represents one surviving opportunity, and the value is the sum of `booking_amount` for that opportunity's bookings.
 - Formula: the sum of `booking.booking_amount`.
-- `booking_type` slices that sum into `new_business`, `expansion`, and `renewal`. `expansion_bookings` is the `expansion` slice. It is the same bookings formula.
-- An account-month reading sums `booking_amount` for bookings whose `booked_at` falls in the month and whose account is that account.
+- `booking_type` slices that sum into `new_business`, `expansion`, and `renewal`. `expansion_bookings` is the `expansion` slice. It is the same bookings formula. Sales owns `bookings` and every `booking_type` slice, including `expansion_bookings`.
+- Customer Success does not own `expansion_bookings`. When it computes `customer_value`, it reads the account-month slice of the sales definition: `booking_type = expansion` and `booked_at` in the month. It does not calculate that slice a second time.
+- An account-month reading sums `booking_amount` for bookings whose `booked_at` falls in the month and whose resolved account is that surviving account. The resolved account is the account reached through `surviving_account_id`.
 - Churn does not create a booking. A correction is another booking and is included when its own `booking_amount` is summed.
 - Source entities: `booking`. The opportunity, account, contract, and subscription foreign keys select the grain. They do not replace `booking_amount`.
 - Owning mart: sales.
@@ -158,7 +163,7 @@ Each metric is defined once. The contract gives each metric a section with its n
 
 - A version contributes that annualized amount only when its `status` is `active`. A `pending` or `churned` version contributes zero.
 - The version in effect follows the Type 2 rule: `effective_start` inclusive, `effective_end` exclusive, and an open end for the current row.
-- Account ARR at a time is the sum of those contributions for the account's surviving subscriptions.
+- Account ARR at a time is the sum of those contributions for subscriptions whose resolved `account_id` is that surviving account. A subscription row with `surviving_subscription_id` is excluded. A subscription whose stored `account_id` points at a duplicate account is counted on the surviving account.
 - Account-month ARR is account ARR at month end.
 - The account-month snapshot is a mart built from subscription history. It is not a canonical entity, not a row in `erd.md`, and not a periodic ARR fact.
 - Source entities: `subscription`, `account`.
@@ -167,7 +172,7 @@ Each metric is defined once. The contract gives each metric a section with its n
 #### `retained_arr`
 
 - Grain: one account in one calendar month.
-- Formula: for each surviving subscription that is `active` at the prior month end and still `active` at this month end, add the annualized amount of the version in effect at the prior month end. A subscription that is `churned` or otherwise not `active` at this month end contributes zero. A subscription that was not `active` at the prior month end contributes zero.
+- Formula: for each surviving subscription whose resolved `account_id` is that account, and that is `active` at the prior month end and still `active` at this month end, add the annualized amount of the version in effect at the prior month end. A subscription row with `surviving_subscription_id` is excluded. A subscription that is `churned` or otherwise not `active` at this month end contributes zero. A subscription that was not `active` at the prior month end contributes zero.
 - An increase in `recurring_amount` during the month stays out of `retained_arr`. That increase is recognized through `expansion_bookings`.
 - Source entities: `subscription`, `account`.
 - Owning mart: Customer Success.
@@ -182,10 +187,10 @@ Each metric is defined once. The contract gives each metric a section with its n
 #### `customer_value`
 
 - Grain: one account in one calendar month.
-- Formula: `retained_arr` plus `expansion_bookings` for that account-month.
-- `retained_arr` is the stock defined above. `expansion_bookings` is the flow of `booking_amount` with `booking_type = expansion` and `booked_at` in the month. The contract adds them because that sum is the customer-value definition for the retention question.
+- Formula: `retained_arr` plus the account-month `expansion_bookings` slice. Customer Success reads that slice from the sales definition (`booking_type = expansion` and `booked_at` in the month). It does not own `expansion_bookings` and does not calculate the slice a second time.
+- `retained_arr` is the stock defined above. The slice is the flow of `booking_amount` in that month. The contract adds them because that sum is the customer-value definition for the retention question.
 - Source entities: `subscription`, `booking`, `account`.
-- Owning mart: Customer Success.
+- Owning mart: Customer Success owns `customer_value`. Sales owns the `expansion_bookings` input.
 
 #### `retention`
 
@@ -200,7 +205,7 @@ Each metric is defined once. The contract gives each metric a section with its n
 
 - Grain: one account. The event grain remains one `adoption_reached` event per account, ordered by that account's first `product_outcome` of any `outcome_type`, with `subject_entity` of `account` and no product user on the event.
 - Formula: the account has adopted when that event exists.
-- The Customer Success mart stores the account-month reading: 1 when `adoption_reached.occurred_at` is at or before month end, otherwise 0. That flag is the monthly reading of the same event.
+- The Customer Success mart stores the account-month reading: 1 when `adoption_reached.occurred_at` is at or before month end, otherwise 0. That flag is the monthly reading of the same event. The account is the event's stored `account_id`, resolved through `surviving_account_id`. The stored key on the lifecycle-event column list is not rewritten.
 - Source entities: `lifecycle_event`, `product_outcome`, `account`.
 - Owning mart: Customer Success.
 
@@ -209,6 +214,7 @@ Each metric is defined once. The contract gives each metric a section with its n
 - Grain: one account in one calendar month.
 - `usage_work_units` is the sum of `product_usage.work_unit_count` for that account whose `occurred_at` falls in the month.
 - `outcome_count` is the count of `product_outcome` rows for that account whose `occurred_at` falls in the month.
+- The account is the account stored on the usage or outcome row, resolved through `surviving_account_id`. `product_user_id` resolves through `surviving_product_user_id`. A later Type 2 change of `account_id` on the product user does not move the historical row onto that later account.
 - These measures describe usage intensity. They are not `adoption`, not an adoption score, and they are not copied onto `lifecycle_event`.
 - Source entities: `product_usage`, `product_outcome`, `account`.
 - Owning mart: Customer Success.
@@ -226,8 +232,8 @@ The sales question is answered from the sales mart without a second pipeline or 
 | Mart | Grain | Metrics it owns |
 |---|---|---|
 | Marketing | One row represents one campaign. | `sourced_pipeline`, `influenced_pipeline`. |
-| Sales | One row represents one surviving opportunity. | `pipeline_amount`, `bookings`, the `booking_type` slices, `is_won`. |
-| Customer Success | One row represents one account in one calendar month. | `arr`, `retained_arr`, `beginning_arr`, `expansion_bookings`, `customer_value`, `retention`, `adoption`, `usage_work_units`, `outcome_count`. |
+| Sales | One row represents one surviving opportunity. | `pipeline_amount`, `bookings`, every `booking_type` slice including `expansion_bookings`, `is_won`. |
+| Customer Success | One row represents one account in one calendar month. | `arr`, `retained_arr`, `beginning_arr`, `customer_value`, `retention`, `adoption`, `usage_work_units`, `outcome_count`. |
 | Executive scorecard | One row represents one account in one calendar month. | None. It reads the domain marts. |
 
 The marketing mart may carry the campaign's summed `spend_amount`, `impression_count`, and `click_count` from `campaign_performance` as context. Those columns are not pipeline, and the contract does not define a return on spend.
@@ -240,12 +246,12 @@ The sales mart may carry quote and activity attributes as context for the sales 
 
 The scorecard grain is account-month. It reads the domain definitions and does not define a second formula for pipeline, bookings, ARR, retention, or adoption.
 
-- `pipeline_amount` is the sum of the sales definition for the account's surviving opportunities, using the opportunity version in effect at month end. Opportunities with `created_at` after month end are excluded. Opportunities with no originating campaign are included here and excluded from every campaign's `sourced_pipeline`.
-- `bookings` is the bookings sum for that account whose `booked_at` falls in the month, including the `expansion_bookings` slice.
-- `arr`, `retained_arr`, `beginning_arr`, `customer_value`, `retention`, `adoption`, `usage_work_units`, and `outcome_count` are the Customer Success values for that account-month. The scorecard does not recompute them from subscriptions, bookings, or product events.
+- `pipeline_amount` is the sum of the sales definition for the account's surviving opportunities, using the opportunity version in effect at month end. The account is the opportunity's stored `account_id`, resolved through `surviving_account_id`, so each surviving opportunity is counted on its surviving account. Opportunities with `created_at` after month end are excluded. Opportunities with no originating campaign are included here and excluded from every campaign's `sourced_pipeline`.
+- `bookings` is the bookings sum for that account whose `booked_at` falls in the month. Sales owns that sum and every `booking_type` slice, including `expansion_bookings`. The account is the booking's stored `account_id`, resolved through `surviving_account_id`.
+- `arr`, `retained_arr`, `beginning_arr`, `customer_value`, `retention`, `adoption`, `usage_work_units`, and `outcome_count` are the Customer Success values for that account-month. The scorecard does not recompute them from subscriptions, bookings, or product events. `customer_value` includes the sales-owned `expansion_bookings` slice because Customer Success reads that slice (`booking_type = expansion` and `booked_at` in the month) when it computes `customer_value`. The scorecard reads that slice through that Customer Success use of the sales definition. It does not calculate `expansion_bookings` again.
 - `sourced_pipeline` and `influenced_pipeline` stay on the marketing mart. The scorecard does not allocate pipeline across campaigns and does not add those two measures together.
 
-Summing `sourced_pipeline` across campaigns equals the sum of current `pipeline_amount` for opportunities that have an originating campaign. Summing account `pipeline_amount` across accounts, at the same as-of time, equals the sum of `pipeline_amount` across surviving opportunities.
+Summing `sourced_pipeline` across campaigns equals the sum of current `pipeline_amount` for opportunities that have an originating campaign. Summing account `pipeline_amount` across accounts, at the same as-of time, equals the sum of `pipeline_amount` across surviving opportunities, because each surviving opportunity is counted on its surviving account.
 
 ### Lifecycle-event column contract
 
@@ -265,7 +271,7 @@ Domain lifecycle-event models that later issues emit share one column list, in t
 
 The allowed `event_name` values are `lead_created`, `lead_qualified`, `lead_disqualified`, `lead_converted`, `opportunity_opened`, `opportunity_stage_changed`, `opportunity_won`, `opportunity_lost`, `customer_converted`, `adoption_reached`, `subscription_renewed`, `subscription_expanded`, and `subscription_churned`.
 
-The contract copies `subject_entity` and the presence or absence of each foreign key from the event catalog in `entities.md`, unchanged. `product_usage` stays on `product_usage` and is not part of this column list.
+The contract copies `subject_entity` and the presence or absence of each foreign key from the event catalog in `entities.md`, unchanged. The column list is a copy of the stored keys. Metric resolution of survivor links does not rewrite those stored keys and does not add or remove a column. `product_usage` stays on `product_usage` and is not part of this column list.
 
 A later union selects this list in this order. Shared lifecycle-event models add no other column. This task does not assign events to domains and does not build the models.
 
@@ -289,11 +295,13 @@ Pipeline coverage is undefined. The canonical model has no quota. The contract s
 
 ### Pointers
 
-Add one sentence to the end of the amounts paragraph in `docs/data-model/entities.md` that begins "Amounts are observed commercial amounts in US dollars." The new sentence is: "The metric and mart contract for those formulas is `metric-contract.md`."
+Add one sentence to the end of the amounts paragraph in `docs/data-model/entities.md` that begins "Amounts are observed commercial amounts in US dollars." The new sentence is: "The metric and mart contract in `metric-contract.md` defines sourced pipeline, influenced pipeline, bookings, ARR annualization, retention, adoption as the 0/1 flag, and customer value. Pipeline coverage and an adoption rate remain undefined."
 
-Add one sentence immediately after the bullet in `docs/data-model/decisions.md` that begins "Metric definitions for ARR, retention rate, pipeline coverage, and adoption rate are later work." The new sentence is: "The metric and mart contract that defines those formulas is `metric-contract.md`."
+Add one sentence immediately after the bullet in `docs/data-model/decisions.md` that begins "Metric definitions for ARR, retention rate, pipeline coverage, and adoption rate are later work." The new sentence is: "The metric and mart contract in `metric-contract.md` defines sourced pipeline, influenced pipeline, bookings, ARR annualization, retention, adoption as the 0/1 flag, and customer value. Pipeline coverage and an adoption rate remain undefined."
 
-Leave the existing sentences in place. Do not edit entity sections, grains, keys, the event catalog, the open questions, `erd.md`, or `source-mapping.md`.
+In the revenue-history grain open question in `docs/data-model/decisions.md`, leave the grain question open. Do not choose between subscription Type 2 history and a periodic ARR fact, and do not remove that question. Replace only the sentence "The annualization formula remains later metric work either way." with: "The revenue-history grain question stays open. The annualization formula is defined in `metric-contract.md`."
+
+Leave every other existing sentence in place, including the metric-definitions bullet and the rest of the open-question text. Do not edit entity sections, grains, keys, the event catalog, the other open questions, `erd.md`, or `source-mapping.md`. The pointer sentences name the formulas this contract defines. They do not say that pipeline coverage or an adoption rate is defined.
 
 ### Document close
 
@@ -303,8 +311,8 @@ The contract states that no mart issue is eligible to start until a human has ap
 
 - Stay inside `allowed_paths`.
 - `contracts.changes_required` is false. Read `contracts/source/` and `docs/data-model/` and do not edit contracts.
-- Treat `entities.md`, `decisions.md`, `erd.md`, and `source-mapping.md` as the source of entities, grains, and events. Add formulas only.
-- Keep the DATA-001 working assumptions that this contract uses: one `adoption_reached` event per account, and ARR history reconstructed from the subscription's effective-dated `recurring_amount` and `billing_frequency`. Do not edit those open-question sections.
+- Treat `entities.md`, `decisions.md`, `erd.md`, and `source-mapping.md` as the source of entities, grains, and events. Add formulas only, plus the pointer sentences named under Pointers.
+- Keep the DATA-001 working assumptions that this contract uses: one `adoption_reached` event per account, and ARR history reconstructed from the subscription's effective-dated `recurring_amount` and `billing_frequency`. Leave the adoption-grain question and the revenue-history grain question open. The only change inside an open question is the annualization pointer named under Pointers.
 - The account-month snapshot is a mart grain. Do not add a canonical entity for it.
 - Quote and activity are context for the sales question. They stay out of the marketing and Customer Success formulas.
 - Do not create dbt models, semantic topics, demo pages, source records, or metric columns on canonical entities.
@@ -317,10 +325,12 @@ The contract states that no mart issue is eligible to start until a human has ap
 ## Acceptance criteria
 
 - [ ] `docs/data-model/metric-contract.md` exists.
-- [ ] The only edits under `docs/data-model/` are that new file and the two pointer sentences in `entities.md` and `decisions.md`.
+- [ ] The only edits under `docs/data-model/` are `metric-contract.md`, the pointer sentence in the amounts paragraph of `entities.md`, the pointer sentence after the metric-definitions bullet in `decisions.md`, and the annualization sentence in the revenue-history grain question.
 - [ ] `sourced_pipeline`, `influenced_pipeline`, `bookings`, `arr`, `adoption`, and `customer_value` are each defined once, with a grain, a formula, the source entities, and the owning mart.
 - [ ] `retention`, `retained_arr`, `beginning_arr`, `usage_work_units`, and `outcome_count` are each defined once, and the executive scorecard reuses the domain definitions.
 - [ ] The contract states the marketing, sales, Customer Success, and executive-scorecard grains, and states which mart owns each metric.
+- [ ] Before every metric match and rollup, `account_id`, `subscription_id`, and `product_user_id` resolve through the stored `surviving_<entity>_id` by the same one-hop rule as lead, contact, and opportunity. Each surviving opportunity is counted on its surviving account. A later Type 2 `account_id` on a product user does not move historical usage or outcomes. The lifecycle-event column list remains a copy of the stored keys.
+- [ ] Sales owns `bookings` and every `booking_type` slice, including `expansion_bookings`. Customer Success reads that account-month slice when it computes `customer_value` and does not own `expansion_bookings`. The scorecard reads that slice through the Customer Success use of the sales definition.
 - [ ] The executive scorecard reads pipeline and bookings from the sales definitions and reads ARR, retention, adoption, customer value, and usage intensity from the Customer Success definitions. It does not define a second formula for pipeline, bookings, ARR, retention, or adoption.
 - [ ] Sourced pipeline uses the lead's originating campaign, so one opportunity is counted on one campaign. Influenced pipeline is a separate touch measure and can count the same opportunity on more than one campaign. The two measures are not added together.
 - [ ] Bookings use `booking_amount`. Opportunity `amount` remains pipeline. `quoted_amount` and `total_contract_value` are not substitutes for either measure.
@@ -332,16 +342,17 @@ The contract states that no mart issue is eligible to start until a human has ap
 - [ ] The contract includes the review table of working decisions and states that pipeline coverage is undefined.
 - [ ] The contract states that a human must approve it before any mart issue is eligible to start.
 - [ ] `warehouse/dbt/`, `contracts/`, `data-generation/`, and `analytics/` are unchanged.
-- [ ] `erd.md`, `source-mapping.md`, entity grains, keys, the event catalog, and the DATA-001 open questions are unchanged apart from the two pointer sentences.
+- [ ] The pointer sentences name sourced pipeline, influenced pipeline, bookings, ARR annualization, retention, adoption as the 0/1 flag, and customer value, and they state that pipeline coverage and an adoption rate remain undefined. The revenue-history grain question stays open, and its annualization sentence points at `metric-contract.md` for the formula.
+- [ ] `erd.md`, `source-mapping.md`, entity grains, keys, the event catalog, and the other DATA-001 open-question text are unchanged.
 
 ## Execution notes
 
-Implement this specification only after it has merged and issue #26 is `status:ready`. Use an `impl` worktree. Write the contract and the two pointer sentences. Leave this specification file unchanged unless a human changes the approved requirements.
+Implement this specification only after it has merged and issue #26 is `status:ready`. Use an `impl` worktree. Write the contract and the pointer sentences named under Pointers. Leave this specification file unchanged unless a human changes the approved requirements.
 
-Read `docs/data-model/entities.md`, `docs/data-model/decisions.md`, and `docs/data-model/erd.md` before writing. Read the data-modeling skill before writing grains and ownership. Read the dbt skills only as a constraint on what this document must leave to later model issues. Do not implement staging, intermediate models, or marts.
+Read `docs/data-model/entities.md`, `docs/data-model/decisions.md`, and `docs/data-model/erd.md` before writing. Read `docs/data-model/source-mapping.md` for the one-hop survivor lookup before writing metric matches. Read the data-modeling skill before writing grains and ownership. Read the dbt skills only as a constraint on what this document must leave to later model issues. Do not implement staging, intermediate models, or marts.
 
 Present the working decisions in the contract's review section. Do not reopen entity design. Where this specification already chooses a formula, write that formula. Do not replace it with an alternative from the review table unless a human has changed this specification.
 
-Validation is a review of `metric-contract.md` and the two pointer sentences against the acceptance criteria. `testing.component_tests`, `testing.integration_tests`, and `testing.end_to_end_tests` are false. `environment.isolated_schema` is false. `delivery.deployment_required` is false.
+Validation is a review of `metric-contract.md` and the pointer sentences against the acceptance criteria. `testing.component_tests`, `testing.integration_tests`, and `testing.end_to_end_tests` are false. `environment.isolated_schema` is false. `delivery.deployment_required` is false.
 
 The approval gate for later mart issues is a human's approval of the implementation pull request that adds `metric-contract.md`. Do not merge or deploy without human approval.
