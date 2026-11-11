@@ -17,4 +17,5 @@ Read .claude/agents/reviewer.md, the issue, and any earlier review comments. Whe
 End with exactly one of these lines and nothing after it:
 Blocking findings remain
 No blocking findings remain
+Post that body once with `gh pr review {{PR_URL}} --comment --body`. The closing line is the last line of the body. A review that stays in chat does not count. Do not also post an inline comment.
 Leave the label at status:spec-review. Do not change the label, edit files, implement the task, or merge.

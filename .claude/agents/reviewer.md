@@ -37,3 +37,4 @@ When the pull request changes implementation:
 Write `None.` when a section is empty. Do not list files that were read, restate checks that passed, or repeat the status label. End with exactly one of these lines and nothing after it:
 Blocking findings remain
 No blocking findings remain
+Post that body once with `gh pr review <pull request url> --comment --body`. The closing line is the last line of the body. A review that stays in chat does not count. Do not also post an inline comment.

@@ -58,5 +58,6 @@ Report findings in this shape only. Write `None.` when a section is empty. A blo
 End with exactly one of these lines and nothing after it:
 Blocking findings remain
 No blocking findings remain
+Post that body once with `gh pr review <pull request url> --comment --body`. The closing line is the last line of the body. A review that stays in chat does not count. Do not also post an inline comment.
 
 Do not silently modify the implementation being reviewed.
