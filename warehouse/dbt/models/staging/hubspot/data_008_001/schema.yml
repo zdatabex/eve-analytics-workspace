@@ -1,0 +1,667 @@
+version: 2
+
+models:
+  - name: stg_hubspot__company
+    description: >
+      One landed observation of one HubSpot company. History is observation:
+      the same hubspot_company_id stays on a later row when observed_at changes,
+      and every landed row is kept. Read from source('hubspot', 'company').
+      Downstream models ref() this relation instead of reading raw_hubspot.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - hubspot_company_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              primary_domain is null
+              or (
+                primary_domain = lower(trim(primary_domain))
+                and position('://' in primary_domain) = 0
+                and position('/' in primary_domain) = 0
+              )
+    columns:
+      - name: hubspot_company_id
+        description: >
+          Opaque HubSpot identifier for the firm. The same identifier repeats
+          on later observations. It is not a canonical account key, and staging
+          does not reject a value for its shape.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: firm_name
+        description: >
+          Firm name stored by HubSpot. The same name may appear on more than
+          one company, and staging does not choose a survivor.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: primary_domain
+        description: >
+          Host HubSpot stored for the firm. When present it is a lowercase
+          trimmed host with no scheme and no path. The same domain may repeat
+          across companies, and staging does not pick a survivor. Null means
+          HubSpot stored no domain.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: state
+        description: >
+          Principal US state as HubSpot recorded it. Open text, not a closed
+          list of postal codes. Null means HubSpot stored no state.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: segment
+        description: >
+          HubSpot firm-size segment on this observation. Null means HubSpot
+          stored no segment.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["solo", "small", "mid", "large"]
+      - name: practice_focus
+        description: >
+          HubSpot practice-focus label. The catalog is open, so staging does
+          not apply a closed vocabulary. Null means HubSpot stored no focus.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: icp_fit
+        description: >
+          HubSpot ICP classification on this observation. Null means HubSpot
+          stored no fit.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["in_icp", "out_of_icp"]
+      - name: owner_name
+        description: >
+          Person HubSpot names as the firm-relationship owner. This is a name,
+          not an employee identifier, and it is independent of the deal owner.
+          Null means HubSpot stored no owner.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: hubspot_lifecycle_stage
+        description: >
+          HubSpot lifecycle label stored for reconciliation. It is not canonical
+          commercial_status, and staging does not limit it to a closed list.
+          Null means HubSpot stored no label.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: observed_at
+        description: >
+          When HubSpot recorded this observation of the company. With
+          hubspot_company_id it identifies the observation. A later time is
+          another observation, not a collapsed current row.
+        data_tests:
+          - not_null
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          hubspot. It is not a business attribute and it is not part of the
+          observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["hubspot"]
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. It is not a business attribute
+          and it is not part of the observation key. Many observations may
+          share one delivery.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. It is not a business
+          attribute and it is not part of the observation key. A value later
+          than observed_at is valid.
+        data_tests:
+          - not_null
+
+  - name: stg_hubspot__contact
+    description: >
+      One landed observation of one HubSpot contact. History is observation:
+      the same hubspot_contact_id stays on a later row when observed_at changes,
+      and every landed row is kept. Read from source('hubspot', 'contact').
+      Downstream models ref() this relation instead of reading raw_hubspot.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - hubspot_contact_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              email_normalized is null
+              or email_normalized = lower(trim(email_normalized))
+    columns:
+      - name: hubspot_contact_id
+        description: >
+          Opaque HubSpot identifier for the person. The same identifier repeats
+          on later observations. It is not a canonical contact key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: full_name
+        description: >
+          Name HubSpot stores for the person. Null means HubSpot stored no name.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: email_normalized
+        description: >
+          Email HubSpot stored for the person. When present it is already
+          lowercase and trimmed. The same email may repeat across contacts, and
+          staging does not pick a survivor. Null means HubSpot stored no email.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: title
+        description: >
+          Role title HubSpot stored for the person. Open text. Null means
+          HubSpot stored no title.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: buying_role
+        description: >
+          Buying role HubSpot stored on this observation. Null means HubSpot
+          stored no role.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["champion", "decision_maker", "user", "billing"]
+      - name: observed_at
+        description: >
+          When HubSpot recorded this observation of the contact. With
+          hubspot_contact_id it identifies the observation.
+        data_tests:
+          - not_null
+      - name: hubspot_company_id
+        description: >
+          HubSpot firm identifier cited by this contact observation. Null means
+          the contact has no firm on this observation. A present value matches
+          a company identifier in stg_hubspot__company. A later observation may
+          cite a different firm.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__company")
+                field: hubspot_company_id
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          hubspot. It is not a business attribute and it is not part of the
+          observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["hubspot"]
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. It is not a business attribute
+          and it is not part of the observation key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. It is not a business
+          attribute and it is not part of the observation key. A value later
+          than observed_at is valid.
+        data_tests:
+          - not_null
+
+  - name: stg_hubspot__lead
+    description: >
+      One landed observation of one HubSpot lead. History is observation:
+      each status signal remains its own row, keyed by hubspot_lead_id and
+      observed_at, and every landed row is kept. Read from
+      source('hubspot', 'lead'). Downstream models ref() this relation instead
+      of reading raw_hubspot. This model does not emit a lifecycle event.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - hubspot_lead_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "observed_at >= created_at"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              (status = 'working' and emitted_event is null)
+              or (status = 'qualified' and emitted_event = 'lead_qualified')
+              or (status = 'disqualified' and emitted_event = 'lead_disqualified')
+              or (status = 'converted' and emitted_event = 'lead_converted')
+              or status = 'new'
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              (
+                emitted_event = 'lead_converted'
+                and hubspot_deal_id is not null
+              ) or (
+                coalesce(emitted_event, '') <> 'lead_converted'
+                and hubspot_deal_id is null
+              )
+    columns:
+      - name: hubspot_lead_id
+        description: >
+          Opaque HubSpot identifier for the lead. The same identifier repeats
+          on later observations. It is not a canonical lead key. A repeated
+          identifier with a different observed_at is another observation.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: status
+        description: >
+          HubSpot lead status on this observation. working carries no source
+          signal. qualified, disqualified, and converted each name the matching
+          source signal.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["new", "working", "qualified", "disqualified", "converted"]
+      - name: created_at
+        description: >
+          When HubSpot created the lead. The value stays the same on every
+          observation of one hubspot_lead_id. It is distinct from observed_at
+          and from ingested_at.
+        data_tests:
+          - not_null
+      - name: observed_at
+        description: >
+          When HubSpot recorded this lead observation. With hubspot_lead_id it
+          identifies the observation. It is at or after created_at. The creation
+          observation sets the two equal.
+        data_tests:
+          - not_null
+      - name: emitted_event
+        description: >
+          Source signal stored on this lead observation. It is not a
+          lifecycle_event row, and this model does not emit customer_converted.
+          Null means this observation carries no lead signal, which is required
+          when status is working.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - lead_created
+                  - lead_qualified
+                  - lead_disqualified
+                  - lead_converted
+      - name: hubspot_company_id
+        description: >
+          HubSpot firm identifier cited by this lead observation. Null means
+          the lead has no firm on this observation. A present value matches a
+          company identifier in stg_hubspot__company.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__company")
+                field: hubspot_company_id
+      - name: hubspot_contact_id
+        description: >
+          HubSpot person identifier cited by this lead observation. Null means
+          the lead has no contact on this observation. A present value matches
+          a contact identifier in stg_hubspot__contact.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__contact")
+                field: hubspot_contact_id
+      - name: marketing_campaign_id
+        description: >
+          Unresolved Marketing identifier stored on the HubSpot lead. Staging
+          does not look up the campaign and does not test this value against
+          Marketing.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier cited when the lead converts. It is present
+          only on the lead_converted observation and matches a deal identifier
+          in stg_hubspot__deal. Every other lead observation stores null.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__deal")
+                field: hubspot_deal_id
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          hubspot. It is not a business attribute and it is not part of the
+          observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["hubspot"]
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. It is not a business attribute
+          and it is not part of the observation key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. It is not a business
+          attribute and it is not part of the observation key. A value later
+          than observed_at is valid.
+        data_tests:
+          - not_null
+
+  - name: stg_hubspot__deal
+    description: >
+      One landed observation of one HubSpot deal. History is observation:
+      each stage signal remains its own row, keyed by hubspot_deal_id and
+      observed_at, and every landed row is kept. Read from
+      source('hubspot', 'deal'). Downstream models ref() this relation instead
+      of reading raw_hubspot. This model does not emit a lifecycle event and
+      does not calculate bookings or ARR.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - hubspot_deal_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "observed_at >= created_at"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "amount is null or amount >= 0"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              (
+                opportunity_type = 'new_business'
+                and dealhub_subscription_id is null
+              ) or (
+                opportunity_type in ('expansion', 'renewal')
+                and dealhub_subscription_id is not null
+                and dealhub_subscription_id <> ''
+              )
+    columns:
+      - name: hubspot_deal_id
+        description: >
+          Opaque HubSpot identifier for the deal. The same identifier repeats
+          on later observations. It is not a canonical opportunity key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: opportunity_name
+        description: >
+          Deal name HubSpot stored on this observation. Two deals may share a
+          name when their identifiers differ. Staging does not collapse them.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: opportunity_type
+        description: >
+          HubSpot opportunity type on this observation. new_business carries no
+          DealHub subscription identifier. expansion and renewal carry one, and
+          staging does not check that the subscription exists.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["new_business", "expansion", "renewal"]
+      - name: stage
+        description: >
+          HubSpot stage on this observation. A stage that differs from the prior
+          observation of the same deal carries the matching source signal. A
+          repeated stage carries no signal.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - discovery
+                  - evaluation
+                  - proposal
+                  - negotiation
+                  - closed_won
+                  - closed_lost
+      - name: amount
+        description: >
+          HubSpot-entered deal amount. It is not bookings and not ARR. Null
+          means unreported and stays null rather than becoming zero. A reported
+          amount is zero or greater.
+      - name: expected_close_date
+        description: >
+          Close date HubSpot stored for the deal. It is a date with no time,
+          and it is distinct from created_at, observed_at, and any contract
+          start date. Null means HubSpot stored no close date.
+      - name: owner_name
+        description: >
+          Person HubSpot names as the deal owner. This is a name, not an
+          employee identifier, and it is independent of the company owner.
+          Null means HubSpot stored no owner.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: forecast_category
+        description: >
+          HubSpot forecast category on this observation. Null means HubSpot
+          stored no category.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["pipeline", "best_case", "commit", "closed", "omitted"]
+      - name: created_at
+        description: >
+          When HubSpot created the deal. The value stays the same on every
+          observation of one hubspot_deal_id. The opening observation sets
+          observed_at equal to this timestamp.
+        data_tests:
+          - not_null
+      - name: observed_at
+        description: >
+          When HubSpot recorded this deal observation. With hubspot_deal_id it
+          identifies the observation. It is at or after created_at.
+        data_tests:
+          - not_null
+      - name: emitted_event
+        description: >
+          Source signal stored on this deal observation. It is not a
+          lifecycle_event row, and this model does not emit customer_converted.
+          Null means the stage did not change from the prior observation.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - opportunity_opened
+                  - opportunity_stage_changed
+                  - opportunity_won
+                  - opportunity_lost
+      - name: hubspot_company_id
+        description: >
+          HubSpot firm identifier for the deal. The same firm stays on every
+          observation of one deal, and the value matches a company identifier
+          in stg_hubspot__company.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__company")
+                field: hubspot_company_id
+      - name: hubspot_contact_id
+        description: >
+          HubSpot person identifier cited by this deal observation. Null means
+          the deal names no contact. A present value matches a contact
+          identifier in stg_hubspot__contact, and the contact observation in
+          effect at observed_at cites the same firm as the deal.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__contact")
+                field: hubspot_contact_id
+      - name: hubspot_lead_id
+        description: >
+          HubSpot lead identifier cited by this deal. Null means the deal names
+          no lead. Every non-null value on one deal is the same, a present
+          value matches a lead identifier in stg_hubspot__lead, and one lead
+          identifier belongs to one deal.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__lead")
+                field: hubspot_lead_id
+      - name: dealhub_subscription_id
+        description: >
+          Unresolved DealHub subscription identifier stored on the HubSpot deal.
+          It is null on a new_business observation and present on expansion and
+          renewal. Staging does not look up the subscription.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          hubspot. It is not a business attribute and it is not part of the
+          observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["hubspot"]
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. It is not a business attribute
+          and it is not part of the observation key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. It is not a business
+          attribute and it is not part of the observation key. A value later
+          than observed_at is valid.
+        data_tests:
+          - not_null
+
+  - name: stg_hubspot__activity
+    description: >
+      One landed HubSpot activity. History is immutable: hubspot_activity_id is
+      the only key, and the model has no observed_at. Every landed activity is
+      kept. Read from source('hubspot', 'activity'). Downstream models ref()
+      this relation instead of reading raw_hubspot.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              hubspot_company_id is not null
+              or hubspot_contact_id is not null
+              or hubspot_lead_id is not null
+              or hubspot_deal_id is not null
+    columns:
+      - name: hubspot_activity_id
+        description: >
+          Opaque HubSpot identifier for one sales activity. One identifier is
+          one activity. It is not a canonical activity key, and a correction
+          would be a new identifier rather than a second observation.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: activity_type
+        description: >
+          Kind of sales interaction HubSpot recorded.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["call", "email", "meeting"]
+      - name: subject
+        description: >
+          Short description HubSpot stored for the activity. Open text. Null
+          means HubSpot stored no subject.
+        data_tests:
+          - dbt_utils.not_empty_string
+      - name: occurred_at
+        description: >
+          When the interaction happened. It is distinct from ingested_at. A
+          later ingested_at is a late delivery and remains valid.
+        data_tests:
+          - not_null
+      - name: hubspot_company_id
+        description: >
+          HubSpot firm identifier cited as a parent of the activity. Null means
+          this activity does not name a firm. A present value matches a company
+          identifier in stg_hubspot__company. At least one parent identifier is
+          present.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__company")
+                field: hubspot_company_id
+      - name: hubspot_contact_id
+        description: >
+          HubSpot person identifier cited as a parent of the activity. Null
+          means this activity does not name a contact. A present value matches
+          a contact identifier in stg_hubspot__contact.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__contact")
+                field: hubspot_contact_id
+      - name: hubspot_lead_id
+        description: >
+          HubSpot lead identifier cited as a parent of the activity. Null means
+          this activity does not name a lead. A present value matches a lead
+          identifier in stg_hubspot__lead.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__lead")
+                field: hubspot_lead_id
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier cited as a parent of the activity. Null means
+          this activity does not name a deal. A present value matches a deal
+          identifier in stg_hubspot__deal.
+        data_tests:
+          - dbt_utils.not_empty_string
+          - relationships:
+              arguments:
+                to: ref("stg_hubspot__deal")
+                field: hubspot_deal_id
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          hubspot. It is not a business attribute and it is not part of the
+          activity key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["hubspot"]
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. It is not a business attribute
+          and it is not part of the activity key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. It is not a business
+          attribute and it is not part of the activity key. A value later than
+          occurred_at is valid.
+        data_tests:
+          - not_null
