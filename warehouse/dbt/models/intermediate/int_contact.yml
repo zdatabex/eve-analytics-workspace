@@ -1,0 +1,61 @@
+version: 2
+
+models:
+  - name: int_contact
+    description: "One sales contact as that person stood from one change to the next. A shared email points the later person at the earlier person, and a move to another firm starts another row. Deal amount and product logins live on later models."
+    config:
+      materialized: view
+    columns:
+      - name: contact_version_id
+        description: "The span of time this row keeps for the person."
+        data_tests:
+          - unique
+          - not_null
+      - name: contact_id
+        description: "The person this row belongs to."
+        data_tests:
+          - not_null
+      - name: account_id
+        description: "The firm this person belonged to during this span."
+        data_tests:
+          - relationships:
+              arguments:
+                to: 'ref("int_account")'
+                field: account_id
+      - name: surviving_contact_id
+        description: "The earlier person, when this person is a duplicate."
+        data_tests:
+          - relationships:
+              arguments:
+                to: 'ref("int_contact")'
+                field: contact_id
+      - name: hubspot_contact_id
+        description: "HubSpot's id for this person."
+        data_tests:
+          - not_null
+      - name: full_name
+        description: "The person's name as sales knows it."
+      - name: email_normalized
+        description: "The person's email in lowercase, which another HubSpot contact may share."
+      - name: title
+        description: "The person's role title at the firm."
+      - name: buying_role
+        description: "The person's part in a purchase: champion, decision maker, user, or billing."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - champion
+                  - decision_maker
+                  - user
+                  - billing
+      - name: is_current
+        description: "Whether this row is the person's open span."
+        data_tests:
+          - not_null
+      - name: effective_start
+        description: "When this span began, and this moment is included."
+        data_tests:
+          - not_null
+      - name: effective_end
+        description: "When this span ended, and this moment is not included; the open span has no end."

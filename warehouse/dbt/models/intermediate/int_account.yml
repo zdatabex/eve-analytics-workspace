@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: int_account
+    description: "One law firm as it stood from one change to the next. A duplicate firm stays on a single row and points at the earlier firm. Commercial status, deal amount, contract value, and booking amount live on later models."
+    config:
+      materialized: view
+    columns:
+      - name: account_version_id
+        description: "The span of time this row keeps for the firm."
+        data_tests:
+          - unique
+          - not_null
+      - name: account_id
+        description: "The firm this row belongs to."
+        data_tests:
+          - not_null
+      - name: surviving_account_id
+        description: "The earlier firm, when this firm is a duplicate."
+        data_tests:
+          - relationships:
+              arguments:
+                to: 'ref("int_account")'
+                field: account_id
+      - name: hubspot_company_id
+        description: "HubSpot's id for this firm."
+      - name: product_firm_id
+        description: "Product's id for this firm."
+      - name: firm_name
+        description: "The firm's display name, from HubSpot when a HubSpot company is on the firm and from Product when only Product knows the firm."
+        data_tests:
+          - not_null
+      - name: primary_domain
+        description: "The firm's web address, which a duplicate firm may still share with the earlier firm."
+      - name: state
+        description: "The firm's principal US state."
+      - name: segment
+        description: "Firm-size band: solo, small, mid, or large."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - solo
+                  - small
+                  - mid
+                  - large
+      - name: practice_focus
+        description: "The firm's principal plaintiff practice, in the source's own wording."
+      - name: icp_fit
+        description: "Whether the firm is in the ideal customer profile, or outside it."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - in_icp
+                  - out_of_icp
+      - name: owner_name
+        description: "The sales owner of the firm relationship, which may match or differ from a deal owner."
+      - name: hubspot_lifecycle_stage
+        description: "HubSpot's own lifecycle label for the firm, and those words are not limited to prospect, customer, or former customer."
+      - name: is_current
+        description: "Whether this row is the firm's open span."
+        data_tests:
+          - not_null
+      - name: effective_start
+        description: "When this span began, and this moment is included."
+        data_tests:
+          - not_null
+      - name: effective_end
+        description: "When this span ended, and this moment is not included; the open span has no end."
