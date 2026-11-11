@@ -1,0 +1,558 @@
+version: 2
+
+models:
+  - name: stg_dealhub__quote
+    description: >
+      One observation of one DealHub quote at one observed_at. History is
+      observation: the same dealhub_quote_id stays on a later row when
+      observed_at changes, and every landed row is kept. Pass-through of
+      source('dealhub', 'quote'). The row is a source observation, not a
+      canonical quote. quoted_amount stays the proposal amount on this row.
+      It is not a booking amount and not ARR.
+    columns:
+      - name: dealhub_quote_id
+        description: >
+          Opaque DealHub identifier for the quote. The same identifier repeats
+          on a later observed_at. Part of the observation key. Not a canonical
+          surrogate key, and staging does not reject a value for its shape.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: quote_number
+        description: >
+          Document number DealHub assigned to this quote. Stable across
+          observations of one dealhub_quote_id and exclusive to that
+          identifier. Not a surrogate key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: status
+        description: >
+          Quote status DealHub stored on this observation. Closed to draft,
+          sent, accepted, rejected, and expired. A draft may omit quoted_amount.
+          Later statuses may not.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['draft', 'sent', 'accepted', 'rejected', 'expired']
+      - name: quoted_amount
+        description: >
+          Proposal amount on this observation, in US dollars with at most two
+          fraction digits. Not a booking amount, not the contract value, and
+          not ARR. Null is allowed while status is draft. A missing amount
+          stays null.
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+      - name: observed_at
+        description: >
+          When DealHub recorded this observation of the quote. With
+          dealhub_quote_id it identifies the observation. It is not
+          effective_start, and a later timestamp is another observation.
+        data_tests:
+          - not_null
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier the quote cites. Stored as the source
+          identifier DealHub recorded. Not resolved to a canonical opportunity,
+          and this model does not read HubSpot.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_company_id
+        description: >
+          HubSpot company identifier the quote cites. Stored as the source
+          identifier DealHub recorded. Not resolved to a canonical account.
+          A contract that cites this quote uses the same company identifier.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          dealhub. It is not a business attribute and it is not part of the
+          observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['dealhub']
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not a business attribute and
+          not part of the observation key. Many observations may share one
+          delivery, and a replay uses a new delivery_id.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. Not a business attribute
+          and not part of the observation key. A value later than observed_at
+          is a valid late delivery.
+        data_tests:
+          - not_null
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - dealhub_quote_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "status = 'draft' or quoted_amount is not null"
+
+  - name: stg_dealhub__contract
+    description: >
+      One observation of one DealHub contract at one observed_at. History is
+      observation: the same dealhub_contract_id stays on a later row when
+      observed_at changes, and every landed row is kept. Pass-through of
+      source('dealhub', 'contract'). The row is a source observation, not a
+      canonical contract. total_contract_value stays the signed agreement
+      value. It is not ARR and not booking_amount.
+    columns:
+      - name: dealhub_contract_id
+        description: >
+          Opaque DealHub identifier for the contract. The same identifier
+          repeats on a later observed_at. Part of the observation key. Not a
+          canonical surrogate key, and staging does not reject a value for
+          its shape.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: contract_number
+        description: >
+          Document number DealHub assigned to this contract. Stable across
+          observations of one dealhub_contract_id and exclusive to that
+          identifier. Not a surrogate key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: status
+        description: >
+          Contract status DealHub stored on this observation. Closed to
+          active, expired, and terminated.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['active', 'expired', 'terminated']
+      - name: total_contract_value
+        description: >
+          Signed agreement value on this observation, in US dollars with at
+          most two fraction digits. Not ARR and not booking_amount. Zero is
+          allowed. A negative value is not.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+      - name: start_date
+        description: >
+          Agreement start as a calendar date. Not an opportunity close date.
+          The two dates may both be present and may differ.
+        data_tests:
+          - not_null
+      - name: end_date
+        description: >
+          Agreement end as a calendar date. On or after start_date. A later
+          observation may move this date without creating a second contract.
+        data_tests:
+          - not_null
+      - name: observed_at
+        description: >
+          When DealHub recorded this observation of the contract. With
+          dealhub_contract_id it identifies the observation. It is not
+          effective_start.
+        data_tests:
+          - not_null
+      - name: dealhub_quote_id
+        description: >
+          Quote identifier this contract cites. One quote is cited by at most
+          one contract. Repeated observations of that contract are one
+          citation. Not a canonical quote key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: ref('stg_dealhub__quote')
+                field: dealhub_quote_id
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier this contract cites. One deal is cited by
+          at most one contract. Stored as the source identifier DealHub
+          recorded. This model does not read HubSpot.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_company_id
+        description: >
+          HubSpot company identifier the contract cites. Stored as the source
+          identifier DealHub recorded. For a cited quote, the contract rows
+          and the quote rows share this company identifier. Not resolved to
+          a canonical account.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          dealhub. It is not a business attribute and it is not part of the
+          observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['dealhub']
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not a business attribute and
+          not part of the observation key. Many observations may share one
+          delivery, and a replay uses a new delivery_id.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. Not a business attribute
+          and not part of the observation key. A value later than observed_at
+          is a valid late delivery.
+        data_tests:
+          - not_null
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - dealhub_contract_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "end_date >= start_date"
+
+  - name: stg_dealhub__subscription
+    description: >
+      One observation of one DealHub subscription at one observed_at. History
+      is observation: the same dealhub_subscription_id stays on a later row
+      when observed_at changes, and every landed row is kept. Pass-through of
+      source('dealhub', 'subscription'). The row is a source observation, not
+      a canonical subscription. recurring_amount stays the recurring fee and
+      billing_frequency stays beside it. This model does not annualize the fee.
+    columns:
+      - name: dealhub_subscription_id
+        description: >
+          Opaque DealHub identifier for the subscription. The same identifier
+          repeats on a later observed_at. Part of the observation key. Not a
+          canonical surrogate key, and staging does not reject a value for
+          its shape.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: subscription_number
+        description: >
+          Document number DealHub assigned to this subscription. Stable across
+          observations of one dealhub_subscription_id and exclusive to that
+          identifier. Not a surrogate key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: status
+        description: >
+          Subscription status DealHub stored on this observation. Closed to
+          pending, active, and churned. Durable status stays active across
+          renewals and expansions. The event is not inferred from status.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['pending', 'active', 'churned']
+      - name: plan_code
+        description: >
+          Commercial catalog code DealHub stored for this subscription. The
+          catalog is open, so staging does not apply a closed vocabulary.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: seat_count
+        description: >
+          Commercial seats on this observation. Whole number, zero or greater.
+          Not a count of product users.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+      - name: recurring_amount
+        description: >
+          Recurring fee on this observation, in US dollars with at most two
+          fraction digits. Not an annualized amount. billing_frequency is
+          stored beside it and is not applied to it.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+      - name: billing_frequency
+        description: >
+          How often DealHub bills recurring_amount. Closed to monthly,
+          quarterly, and annual. Stored as the source value and not used to
+          annualize the fee.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['monthly', 'quarterly', 'annual']
+      - name: term_start
+        description: >
+          Current subscription term start as a calendar date. Distinct from
+          the contract agreement start and from observed_at.
+        data_tests:
+          - not_null
+      - name: term_end
+        description: >
+          Current subscription term end as a calendar date. On or after
+          term_start. A renewal may move the term on that same observation.
+        data_tests:
+          - not_null
+      - name: observed_at
+        description: >
+          When DealHub recorded this observation of the subscription. With
+          dealhub_subscription_id it identifies the observation. It is not
+          effective_start. A churn comparison uses this timestamp, not
+          ingested_at.
+        data_tests:
+          - not_null
+      - name: emitted_event
+        description: >
+          Source signal DealHub stored for renewal, expansion, or churn. Null
+          when status is pending, or when status is active and the observation
+          is not a renewal or expansion. Not a lifecycle_event row. Staging
+          does not create an event from status. A missing value stays null.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['subscription_renewed', 'subscription_expanded', 'subscription_churned']
+      - name: dealhub_contract_id
+        description: >
+          Contract identifier that grants this subscription. Stable across
+          observations of one dealhub_subscription_id. Not a canonical
+          contract key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: ref('stg_dealhub__contract')
+                field: dealhub_contract_id
+      - name: hubspot_company_id
+        description: >
+          HubSpot company identifier the subscription cites. Stored as the
+          source identifier DealHub recorded. For a cited contract, the
+          subscription rows and the contract rows share this company
+          identifier. Not resolved to a canonical account.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          dealhub. It is not a business attribute and it is not part of the
+          observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['dealhub']
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not a business attribute and
+          not part of the observation key. Many observations may share one
+          delivery, and a replay uses a new delivery_id.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. Not a business attribute
+          and not part of the observation key. A value later than observed_at
+          is a valid late delivery.
+        data_tests:
+          - not_null
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - dealhub_subscription_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "term_end >= term_start"
+
+  - name: stg_dealhub__booking
+    description: >
+      One recognized DealHub booking. History is immutable: dealhub_booking_id
+      identifies the booking, and the row is not observed again. Pass-through
+      of source('dealhub', 'booking'). The row is a source booking, not a
+      canonical booking. booking_amount stays the recognized booking amount.
+      It is not ARR and not the HubSpot deal amount.
+    columns:
+      - name: dealhub_booking_id
+        description: >
+          Opaque DealHub identifier for one immutable booking. The observation
+          key is this column alone. Not a canonical surrogate key, and staging
+          does not reject a value for its shape.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: booking_number
+        description: >
+          Document number DealHub assigned to this booking. Unique across
+          bookings. Not a surrogate key.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: booking_type
+        description: >
+          Economic event DealHub recognized. Closed to new_business,
+          expansion, and renewal. Stored as the source value. This model does
+          not compare it with a HubSpot opportunity type.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['new_business', 'expansion', 'renewal']
+      - name: booking_amount
+        description: >
+          Recognized booking amount, in US dollars with at most two fraction
+          digits. Not ARR and not the HubSpot deal amount. Zero is allowed.
+          A negative value is not. Churn does not create a booking.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+      - name: booked_at
+        description: >
+          When DealHub recognized the booking. Distinct from ingested_at. A
+          later ingested_at is a valid late delivery. Compared with the
+          subscription churn observed_at, not with ingested_at.
+        data_tests:
+          - not_null
+      - name: hubspot_company_id
+        description: >
+          HubSpot company identifier the booking cites. Stored as the source
+          identifier DealHub recorded. For a cited contract or subscription,
+          the booking rows and the parent rows share this company identifier.
+          Not resolved to a canonical account, and this model does not read
+          HubSpot.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier the booking cites. Stored as the source
+          identifier DealHub recorded. Not resolved to a canonical
+          opportunity, and this model does not read HubSpot.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: dealhub_contract_id
+        description: >
+          Contract identifier the booking cites. Many bookings may cite one
+          contract. Not a canonical contract key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: ref('stg_dealhub__contract')
+                field: dealhub_contract_id
+      - name: dealhub_subscription_id
+        description: >
+          Subscription identifier the booking cites. Many bookings may cite
+          one subscription. Not a canonical subscription key. A booking of a
+          churned subscription is not on or after that churn observation.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: ref('stg_dealhub__subscription')
+                field: dealhub_subscription_id
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is
+          dealhub. It is not a business attribute and it is not part of the
+          booking key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['dealhub']
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not a business attribute and
+          not part of the booking key. Many bookings may share one delivery,
+          and a replay uses a new delivery_id.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. Not a business attribute
+          and not part of the booking key. A value later than booked_at is a
+          valid late delivery.
+        data_tests:
+          - not_null
