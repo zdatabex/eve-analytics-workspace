@@ -130,7 +130,7 @@ The first sentence says what one row is. A later sentence is only the surprise o
 
 | Model | One row | Surprise | Related numbers on another model |
 |---|---|---|---|
-| `stg_hubspot__company` | One HubSpot company as HubSpot recorded it at one time | A later recording of the same company is another row | Deal amount, contract value, and booking amount live on the HubSpot deal and the DealHub models |
+| `stg_hubspot__company` | One HubSpot company as HubSpot recorded it at one time | A later recording of the same company is another row | Deal amount lives on the HubSpot deal, contract value lives on the DealHub contract, and booking amount lives on DealHub bookings |
 | `stg_hubspot__contact` | One HubSpot contact as HubSpot recorded that person at one time | A later recording of the same contact is another row | |
 | `stg_hubspot__lead` | One HubSpot lead as HubSpot recorded its status at one time | A later status is another row | |
 | `stg_hubspot__deal` | One HubSpot deal as HubSpot recorded it at one time | A later recording of the same deal is another row even when the stage stays the same | Contract value lives on the DealHub contract, booking amount lives on DealHub bookings, and the repeating charge lives on the DealHub subscription |
@@ -212,7 +212,7 @@ These distinctions stay in the column sentence that owns them:
 - A campaign id on a HubSpot lead, a subscription id on a HubSpot deal, and a HubSpot id stored on a DealHub or Marketing row is that other system's id.
 - `dealhub_subscription_id` on a HubSpot deal is the subscription an expansion or renewal targets. New business leaves it blank.
 - A lead's `hubspot_deal_id` is present only on the converted observation and blank otherwise.
-- Lead `emitted_event` is blank while the lead is working. Deal `emitted_event` is blank when the stage did not change on that recording. Subscription `emitted_event` is blank while pending, and blank on an active subscription that is not a renewal or expansion.
+- Lead `emitted_event` is blank while the lead is working. Deal `emitted_event` is blank on a later recording whose stage stayed the same. Subscription `emitted_event` is blank while pending, and blank on an active subscription that is not a renewal or expansion.
 - A blank deal amount, quoted price, spend, impression count, or click count stays blank. A draft quote may leave the quoted price blank.
 - Clicks on a campaign day can exceed impressions.
 - The same email can appear on more than one HubSpot contact and on more than one product login. A product login is not a HubSpot contact and is not a billed seat.
