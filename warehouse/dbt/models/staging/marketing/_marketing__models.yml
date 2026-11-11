@@ -1,0 +1,280 @@
+version: 2
+
+models:
+  - name: stg_marketing__campaign
+    description: >
+      One current Marketing campaign from raw_marketing.campaign. History class
+      is current: the source keeps this row only, and a channel correction
+      replaces it. The grain is one marketing campaign, keyed by the opaque
+      source identifier marketing_campaign_id. Canonical campaign identity,
+      attribution logic, and metrics are absent. Spend, impressions, and clicks
+      stay on campaign performance.
+    columns:
+      - name: marketing_campaign_id
+        description: >
+          Opaque source identifier issued by Marketing. Not a canonical
+          campaign_id. Any non-empty string is accepted; shape is not a
+          rejection rule.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: campaign_code
+        description: >
+          Stable campaign code, unique across campaigns. A required string is
+          present and not empty.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: campaign_name
+        description: Program name. A required string is present and not empty.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: channel
+        description: >
+          Current campaign channel. Allowed values are paid_search, paid_social,
+          email, webinar, partner, and outbound. Channel history is this current
+          row only.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - paid_search
+                  - paid_social
+                  - email
+                  - webinar
+                  - partner
+                  - outbound
+      - name: source_system
+        description: >
+          Delivery metadata. The value is marketing. Not a business attribute
+          and not part of the campaign key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - marketing
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not a business key. A required
+          string is present and not empty.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the delivery was accepted, in UTC as landed. Not a business
+          event time. Late delivery is valid.
+        data_tests:
+          - not_null
+
+  - name: stg_marketing__campaign_performance
+    description: >
+      One Marketing campaign on one calendar day from
+      raw_marketing.campaign_performance. History class is immutable at the
+      campaign-day key: a correction replaces that campaign-day in the landed
+      table, and this model does not version it. The grain is one campaign on
+      one day, keyed by marketing_campaign_id and performance_date. There is no
+      separate performance document id. Canonical identity, attribution logic,
+      and metrics are absent. Measures are not summed onto the campaign.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - marketing_campaign_id
+              - performance_date
+    columns:
+      - name: marketing_campaign_id
+        description: >
+          Campaign source identifier. It references
+          stg_marketing__campaign.marketing_campaign_id. Not a canonical
+          campaign_id. A required string is present and not empty. A missing
+          campaign fails the relationship test and stays in this view.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: ref('stg_marketing__campaign')
+                field: marketing_campaign_id
+      - name: performance_date
+        description: >
+          Delivery day as a calendar date. Distinct from ingested_at. Part of
+          the campaign-day key with marketing_campaign_id.
+        data_tests:
+          - not_null
+      - name: spend_amount
+        description: >
+          That day's spend in US dollars. There is no currency field. Null
+          means the source did not report it. Null is not zero. When present,
+          the amount is greater than or equal to zero and stays at two fraction
+          digits. This amount is not a HubSpot amount, a DealHub amount, or a
+          campaign attribute.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: impression_count
+        description: >
+          That day's impressions. Null means the source did not report it.
+          Null is not zero. When present, the count is a whole number greater
+          than or equal to zero.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: click_count
+        description: >
+          That day's clicks. Null means the source did not report it. Null is
+          not zero. When present, the count is a whole number greater than or
+          equal to zero. Clicks may exceed impressions.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: source_system
+        description: >
+          Delivery metadata. The value is marketing. Not a business attribute
+          and not part of the campaign-day key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - marketing
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not part of the campaign-day
+          key. A required string is present and not empty.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the delivery was accepted, in UTC as landed. Distinct from
+          performance_date. Late delivery is valid.
+        data_tests:
+          - not_null
+
+  - name: stg_marketing__touch
+    description: >
+      One attribution touch as Marketing recorded it, from raw_marketing.touch.
+      History class is immutable: the source identifier is the event, and a
+      correction is a new marketing_touch_source_id. The grain is one
+      attribution touch. Canonical marketing_touch_id, attribution logic, and
+      metrics are absent. HubSpot contact, lead, and company identifiers are
+      passed through and are not resolved to canonical parents.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              hubspot_contact_id is not null
+              or hubspot_lead_id is not null
+              or hubspot_company_id is not null
+    columns:
+      - name: marketing_touch_source_id
+        description: >
+          Opaque source identifier of the attribution touch. Not a canonical
+          marketing_touch_id. Any non-empty string is accepted; shape is not a
+          rejection rule.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: occurred_at
+        description: >
+          When the touch happened, in UTC as landed. Distinct from ingested_at.
+          ingested_at may be later.
+        data_tests:
+          - not_null
+      - name: marketing_campaign_id
+        description: >
+          Campaign source identifier. It references
+          stg_marketing__campaign.marketing_campaign_id. Not a canonical
+          campaign_id. A required string is present and not empty. A missing
+          campaign fails the relationship test and stays in this view.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: ref('stg_marketing__campaign')
+                field: marketing_campaign_id
+      - name: hubspot_contact_id
+        description: >
+          HubSpot contact source identifier stored on the touch. Not a
+          canonical contact_id. Null when Marketing omitted this parent. An
+          empty string is not a substitute for null. This model does not look
+          up the HubSpot contact.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_lead_id
+        description: >
+          HubSpot lead source identifier stored on the touch. Not a canonical
+          lead_id. Null when Marketing omitted this parent. An empty string is
+          not a substitute for null. This model does not look up the HubSpot
+          lead.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_company_id
+        description: >
+          HubSpot company source identifier stored on the touch. Not a
+          canonical account_id. Null when Marketing omitted this parent. An
+          empty string is not a substitute for null. This model does not check
+          the company against a cited lead or contact.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: source_system
+        description: >
+          Delivery metadata. The value is marketing. Not a business attribute
+          and not the touch key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - marketing
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not the touch key. A required
+          string is present and not empty.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the delivery was accepted, in UTC as landed. Distinct from
+          occurred_at. It may be later than occurred_at. Late delivery is valid.
+        data_tests:
+          - not_null
