@@ -2,7 +2,7 @@
 
 GitHub Issues are the source of truth for task status, assignment, priority, and dependencies. Specifications in `specs/` are the version-controlled implementation contract. Pull requests are the delivery and review mechanism.
 
-The dispatcher in `agent-platform/dispatcher` assigns the owning agent and records issue status. It does not implement tasks or choose the next state. Data pipeline scheduling stays in `orchestration/` and is owned by `data-engineer`.
+The dispatcher in `agent-platform/dispatcher` assigns the owning agent and records issue status. It sets `status:ready` after the specification merges and `status:needs-close` after the implementation checks pass. It does not implement the work. Data pipeline scheduling stays in `orchestration/` and is owned by `data-engineer`.
 
 ## Workflow
 
@@ -14,7 +14,7 @@ The dispatcher in `agent-platform/dispatcher` assigns the owning agent and recor
 6. The owning agent sets `status:in-progress`, creates an `impl` worktree, and implements the merged specification inside `allowed_paths`. The agent creates an isolated development schema when the specification requires one, writes and runs the required tests, updates documentation, checks downstream contracts and models, and validates the acceptance criteria.
 7. The agent opens an implementation pull request and sets `status:review`. The reviewer evaluates the implementation against the merged specification, the acceptance criteria, and project standards. The reviewer reports findings on the pull request and does not modify implementation code or the label. When changes are requested, the label stays `status:review`. The owning agent updates the existing `impl/` branch and pushes to the open pull request. A human approves and merges it, or rejects it by closing the pull request without merging and setting `status:blocked` with a comment on why.
 8. A human approves the pull request where required, and the approved changes merge to the main branch.
-9. After the pull request is merged and required checks have passed, a human closes the GitHub Issue. Dependent issues stay put until their prerequisites are closed. They then become eligible for specification or implementation according to their own status label.
+9. After the pull request is merged and required checks have passed, the dispatcher sets `status:needs-close`. A human closes the GitHub Issue. Dependent issues stay put until their prerequisites are closed. They then become eligible for specification or implementation according to their own status label.
 
 Agents do not resume an issue labeled `status:blocked`. Restarting rejected work is a later human decision: close the issue, or remove the old branch and set `status:needs-spec`.
 
@@ -45,6 +45,7 @@ One issue has one owning agent. That agent may edit `contracts/` only when the s
 | `status:ready` | The specification is approved and implementation can begin. |
 | `status:in-progress` | Implementation is underway. |
 | `status:review` | The implementation is submitted for review. |
+| `status:needs-close` | The implementation has merged, the checks have passed, and a human closes the issue. |
 | `status:blocked` | Work is waiting on clarification, a decision, or a dependency. |
 
 Only one `status:` label is active on an issue. The dispatcher `set` command enforces that rule. Agents do not advance an issue labeled `status:blocked`.
@@ -56,6 +57,7 @@ Only one `status:` label is active on an issue. The dispatcher `set` command enf
 | `status:ready` | Human or dispatcher, after the specification pull request merges |
 | `status:in-progress` | Owning agent, when implementation starts |
 | `status:review` | Owning agent, when the implementation pull request opens |
+| `status:needs-close` | Dispatcher, after the implementation pull request merges and required checks pass |
 | `status:blocked` | Human |
 
 Create the labels with `./agent-platform/dispatcher/dispatcher.sh create-labels`.

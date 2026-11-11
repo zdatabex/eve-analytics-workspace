@@ -38,7 +38,7 @@ GitHub Issues are the source of truth for task status, assignment, priority, and
 6. The owning agent implements the merged specification in an isolated worktree and isolated schema when the specification requires one.
 7. The agent validates acceptance criteria and tests, then opens an implementation pull request.
 8. The reviewer checks the implementation. The label stays `status:review`. When changes are requested, the owning agent updates the open implementation pull request. A human approves and merges it, or rejects it by closing the pull request without merging and setting `status:blocked`.
-9. After required checks pass, a human closes the issue.
+9. After required checks pass, the dispatcher sets `status:needs-close`. A human closes the issue.
 
 Specifications use Markdown with YAML frontmatter. The template is `agent-platform/templates/spec.md`.
 

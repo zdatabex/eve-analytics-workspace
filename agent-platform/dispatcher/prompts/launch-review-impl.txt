@@ -4,7 +4,7 @@ Issue: {{ISSUE_URL}}
 Pull request: {{PR_URL}}
 Branch: {{BRANCH}}
 
-Read .claude/agents/reviewer.md, the merged specification, and any earlier review comments. Report findings in this shape only. Write `None.` when a section is empty. A blocking item states the failing rule and the required change in at most four sentences. A suggestion is one sentence. Do not list files that were read, restate checks that passed, or repeat the status label.
+Read .claude/agents/reviewer.md, the merged specification, and any earlier review comments. When the implementation changes `warehouse/dbt`, read the Documentation section of `.agents/skills/dbt-development/SKILL.md`. A description written as a warehouse note, or a column description that repeats the model or the tests, is a blocking finding. Report findings in this shape only. Write `None.` when a section is empty. A blocking item states the failing rule and the required change in at most four sentences. A suggestion is one sentence. Do not list files that were read, restate checks that passed, or repeat the status label.
 
 ## Blocking
 
@@ -17,4 +17,5 @@ Read .claude/agents/reviewer.md, the merged specification, and any earlier revie
 End with exactly one of these lines and nothing after it:
 Blocking findings remain
 No blocking findings remain
+Post that body once with `gh pr review {{PR_URL}} --comment --body`. The closing line is the last line of the body. A review that stays in chat does not count. Do not also post an inline comment.
 Leave the label at status:review. Do not change the label, edit files, or merge.

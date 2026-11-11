@@ -7,6 +7,7 @@ STATUS_LABELS=(
   status:ready
   status:in-progress
   status:review
+  status:needs-close
   status:blocked
 )
 
@@ -294,6 +295,13 @@ phase_decision() {
   fi
   if [[ "$state" == "MERGED" && "$phase" == "impl" ]]; then
     if [[ "$checks" == "passed" ]]; then
+      if [[ "$STATUS" == "status:needs-close" ]]; then
+        ACTION="wait"
+        TRIGGER="issue is status:needs-close"
+        AGENT=""
+        PROMPT=""
+        return 0
+      fi
       ACTION="ask-close"
       TRIGGER="implementation pull request #${number} is merged and the required checks have passed"
       PROMPT="Required checks passed for ${TICKET}. Close ${ISSUE_URL}."
@@ -404,7 +412,7 @@ decide_issue() {
     return 0
   fi
   if phase_decision impl launch-review-impl launch-revise-impl; then
-    if [[ "$ACTION" == "ask-close" || "$STATUS" == "status:review" ]]; then
+    if [[ "$ACTION" == "ask-close" || "$STATUS" == "status:review" || "$STATUS" == "status:needs-close" ]]; then
       return 0
     fi
   fi
@@ -569,6 +577,9 @@ run_cmd() {
   fi
   if [[ "$ACTION" == "launch-implement" ]]; then
     set_label "$ISSUE" "status:ready"
+  fi
+  if [[ "$ACTION" == "ask-close" ]]; then
+    set_label "$ISSUE" "status:needs-close"
   fi
   if [[ "$ACTION" == ask-* ]]; then
     printf '%s\n' "$PROMPT"

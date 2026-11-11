@@ -39,7 +39,11 @@ A specification may name grains, columns, and business rules. It adopts this str
 ## Documentation
 
 - For staging, follow the Staging section. Other models keep their YAML beside the SQL.
-- Document model purpose, grain, and important columns.
+- Write descriptions for a person using the model.
+- A model description is at most three short sentences: what one row is, the behavior that would surprise them when there is one, and where related numbers live when they are not on this model. "One marketing campaign per row. A channel change replaces the previous channel. Daily spend and results are on campaign performance."
+- Do not write grain, keys, history class, canonical identity, `source()` or `ref()` mechanics, reconciliation, or "not on this model."
+- A column description is one sentence a person would say. Say what the column means and, when the values help, say them in ordinary words. "How this campaign reaches people: paid search, paid social, email, webinar, partner, or outbound."
+- Do not repeat the model's sentence. Do not restate `not_null`, `unique`, or "not a canonical key."
 - Define primary key and relationship tests.
 - Document materialization and incremental behavior.
 
