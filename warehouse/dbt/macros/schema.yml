@@ -1,15 +1,6 @@
 version: 2
 
 macros:
-  - name: generate_surrogate_key
-    description: >
-      Produces a deterministic MD5 key from an ordered list of SQL expressions.
-      Values are length-prefixed and null is encoded separately, preventing
-      delimiter and null/empty-string ambiguity.
-    arguments:
-      - name: fields
-        description: Ordered SQL expressions whose values define the key.
-
   - name: effective_date
     description: >
       Returns source columns plus effective_start, effective_end, and is_current.

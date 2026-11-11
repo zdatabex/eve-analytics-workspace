@@ -60,12 +60,14 @@ specific run:
   --vars '{date_spine_start_date: 2024-01-01, date_spine_end_date: 2025-07-01}'
 ```
 
-`generate_surrogate_key(fields)` returns a deterministic, null-safe MD5 key.
-The ordered SQL expressions are length-prefixed, so null, empty strings, and
-field boundaries remain distinct.
+`dbt_utils.generate_surrogate_key(field_list)` is the shared surrogate-key
+macro. It returns a deterministic hash of an ordered list of SQL expressions.
+Null inputs are encoded before hashing, so a null stays distinct from an empty
+string and the same ordered inputs always return the same key. Leave
+`surrogate_key_treat_nulls_as_empty_strings` unset so that distinction holds.
 
 ```sql
-{{ generate_surrogate_key(['source_system', 'source_identifier']) }}
+{{ dbt_utils.generate_surrogate_key(['source_system', 'source_identifier']) }}
 ```
 
 `effective_date(relation, entity_key, observed_at, tracked_columns)` returns all
