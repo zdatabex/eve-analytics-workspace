@@ -133,7 +133,7 @@ The first sentence says what one row is. A later sentence is only the surprise o
 | `stg_hubspot__company` | One HubSpot company as HubSpot recorded it at one time | A later recording of the same company is another row | Deal amount, contract value, and booking amount live on the HubSpot deal and the DealHub models |
 | `stg_hubspot__contact` | One HubSpot contact as HubSpot recorded that person at one time | A later recording of the same contact is another row | |
 | `stg_hubspot__lead` | One HubSpot lead as HubSpot recorded its status at one time | A later status is another row | |
-| `stg_hubspot__deal` | One HubSpot deal as HubSpot recorded it at one time | A later recording of the same deal is another row even when the stage stays the same | Booking amount lives on DealHub bookings, and the repeating charge lives on the DealHub subscription |
+| `stg_hubspot__deal` | One HubSpot deal as HubSpot recorded it at one time | A later recording of the same deal is another row even when the stage stays the same | Contract value lives on the DealHub contract, booking amount lives on DealHub bookings, and the repeating charge lives on the DealHub subscription |
 | `stg_hubspot__activity` | One HubSpot call, email, or meeting | The activity is kept as recorded and can name a firm, a contact, a lead, a deal, or more than one of those | |
 | `stg_dealhub__quote` | One DealHub quote as DealHub recorded it at one time | A later status or quoted price is another row | Contract value lives on the DealHub contract |
 | `stg_dealhub__contract` | One DealHub contract as DealHub recorded it at one time | A later change to status, value, or dates is another row | The repeating charge lives on the DealHub subscription |
@@ -216,7 +216,7 @@ These distinctions stay in the column sentence that owns them:
 - A blank deal amount, quoted price, spend, impression count, or click count stays blank. A draft quote may leave the quoted price blank.
 - Clicks on a campaign day can exceed impressions.
 - The same email can appear on more than one HubSpot contact and on more than one product login. A product login is not a HubSpot contact and is not a billed seat.
-- A Product firm's name and web address can differ from the HubSpot company for the same firm.
+- The Product name may differ from the HubSpot company.
 - `work_unit_count` counts work on that use. `seat_count` counts seats billed on the subscription. `impression_count` and `click_count` count those delivery events for the campaign day.
 - `plan_code`, `practice_focus`, `workflow_name`, `state`, and the name and subject columns keep the source's own wording.
 
