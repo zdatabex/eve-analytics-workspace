@@ -1,3 +1,6 @@
+-- One quote is cited by one contract, one hubspot_deal_id is cited by one contract, one subscription keeps one dealhub_contract_id, and the company identifier agrees across the quote and citing contract, the contract and subscription, the contract and booking, and the subscription and booking.
+-- relationships checks existence only, so unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this rule.
+
 -- DealHub relationship rules that a column test cannot express.
 -- Parent existence is a relationships test. These checks cover citation
 -- cardinality, a stable subscription contract, and one shared company

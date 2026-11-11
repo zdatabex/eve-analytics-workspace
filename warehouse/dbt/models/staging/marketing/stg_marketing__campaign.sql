@@ -1,11 +1,21 @@
-{{ config(materialized='view', tags=['marketing_staging']) }}
+with raw_data as (
 
-select
-    marketing_campaign_id,
-    campaign_code,
-    campaign_name,
-    channel,
-    source_system,
-    delivery_id,
-    ingested_at
-from {{ source('marketing', 'campaign') }}
+    select * from {{ source('marketing', 'campaign') }}
+
+),
+
+renamed as (
+
+    select
+        marketing_campaign_id,
+        campaign_code,
+        campaign_name,
+        channel,
+        source_system,
+        delivery_id,
+        ingested_at
+    from raw_data
+
+)
+
+select * from renamed

@@ -1,0 +1,105 @@
+version: 2
+
+models:
+  - name: stg_product__user
+    description: >
+      Observation Product user staging interface. The grain is one observation of
+      one product user, keyed by product_user_source_id and observed_at. History is
+      observation. This is not one current login and not an effective-dated version.
+      Read from source('product', 'user'). Downstream models ref() this relation.
+      renamed selects each landed column with no expression. The model does not
+      resolve canonical identity, derive adoption, or calculate a metric.
+      source_system, delivery_id, and ingested_at are delivery metadata and are not
+      part of the grain key. Late ingested_at is valid. Reconciliation exceptions:
+      none.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - product_user_source_id
+              - observed_at
+    columns:
+      - name: product_user_source_id
+        description: >
+          Opaque Product login identifier. Required non-empty string. Many observations
+          can share one login id, so the column is not unique. Not a canonical
+          product_user_id surrogate and not an adoption measure.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: observed_at
+        description: >
+          Observation timestamp. Part of the unique key with product_user_source_id.
+          This source row is not a canonical Type 2 version and not an adoption measure.
+        data_tests:
+          - not_null
+      - name: product_firm_id
+        description: >
+          Relationship to the Product firm source identifier on this observation.
+          Required non-empty string. A later observation may cite a different firm. Not
+          a canonical account surrogate and not an adoption measure.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: "ref('stg_product__firm')"
+                field: product_firm_id
+      - name: email_normalized
+        description: >
+          Optional email. Null when the login has no email. When present, the value is
+          lowercase, trimmed, and non-empty. Duplicate emails are valid, including
+          across firms. Not a canonical contact key and not an adoption measure.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "= lower(trim(email_normalized))"
+              description: >
+                When present, email_normalized equals its lowercase trimmed form.
+      - name: status
+        description: >
+          Product user status enum: invited, active, or inactive. Required. Status does
+          not choose a lifecycle event. Not a canonical commercial status and not an
+          adoption measure.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - invited
+                  - active
+                  - inactive
+      - name: source_system
+        description: >
+          Ingestion metadata. The landed source system for every Product row. Not a
+          canonical business attribute and not an adoption measure.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - product
+      - name: delivery_id
+        description: >
+          Ingestion metadata. Non-empty extraction batch id. Many rows may share one
+          delivery_id. Not unique, not a canonical business attribute, and not an
+          adoption measure.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          Ingestion metadata. Timestamp when the delivery was accepted. It may be later
+          than observed_at. Not a canonical business attribute and not an adoption
+          measure.
+        data_tests:
+          - not_null

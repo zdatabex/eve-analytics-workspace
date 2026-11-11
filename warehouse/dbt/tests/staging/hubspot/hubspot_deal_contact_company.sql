@@ -1,3 +1,6 @@
+-- The contact observation in effect at the deal observed_at has the same hubspot_company_id as the deal.
+-- relationships does not choose an as-of row, so unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this rule.
+
 -- When a deal cites a contact, the contact observation in effect at the deal
 -- observed_at has the same hubspot_company_id. No in-effect observation fails
 -- the check. The observation in effect is the latest observed_at at or before

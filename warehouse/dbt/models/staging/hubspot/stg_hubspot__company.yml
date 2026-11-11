@@ -1,0 +1,147 @@
+version: 2
+
+models:
+  - name: stg_hubspot__company
+    description: >
+      One landed observation of one HubSpot company. The grain is one observation of
+      one HubSpot company, keyed by hubspot_company_id and observed_at. History is
+      observation: the same hubspot_company_id stays on a later row when observed_at
+      changes, and every landed row is kept. Read from source('hubspot', 'company').
+      Downstream models ref() this relation instead of reading raw_hubspot. renamed
+      selects each landed column with no expression. hubspot_lifecycle_stage is the
+      HubSpot label and is not canonical commercial_status. source_system,
+      delivery_id, and ingested_at are delivery metadata and are not part of the
+      grain key. Late ingested_at is valid. Reconciliation exceptions: none.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - hubspot_company_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              primary_domain is null or ( primary_domain = lower(trim(primary_domain)) and
+              position('://' in primary_domain) = 0 and position('/' in primary_domain) = 0
+              )
+          description: >
+            When present, primary_domain is lowercase and trimmed and contains neither a
+            scheme nor a path.
+    columns:
+      - name: hubspot_company_id
+        description: >
+          Opaque HubSpot identifier for the firm. The same identifier repeats on later
+          observations. It is not a canonical account key, and staging does not reject a
+          value for its shape.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: observed_at
+        description: >
+          When HubSpot recorded this observation of the company. With hubspot_company_id
+          it identifies the observation. A later time is another observation, not a
+          collapsed current row.
+        data_tests:
+          - not_null
+      - name: firm_name
+        description: >
+          Firm name stored by HubSpot. The same name may appear on more than one
+          company, and staging does not choose a survivor.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: primary_domain
+        description: >
+          Host HubSpot stored for the firm. When present it is a lowercase trimmed host
+          with no scheme and no path. The same domain may repeat across companies, and
+          staging does not pick a survivor. Null means HubSpot stored no domain.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: state
+        description: >
+          Principal US state as HubSpot recorded it. Open text, not a closed list of
+          postal codes. Null means HubSpot stored no state.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: segment
+        description: >
+          HubSpot firm-size segment on this observation. Null means HubSpot stored no
+          segment.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - solo
+                  - small
+                  - mid
+                  - large
+      - name: practice_focus
+        description: >
+          HubSpot practice-focus label. The catalog is open, so staging does not apply a
+          closed vocabulary. Null means HubSpot stored no focus.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: icp_fit
+        description: >
+          HubSpot ICP classification on this observation. Null means HubSpot stored no
+          fit.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - in_icp
+                  - out_of_icp
+      - name: owner_name
+        description: >
+          Person HubSpot names as the firm-relationship owner. This is a name, not an
+          employee identifier, and it is independent of the deal owner. Null means
+          HubSpot stored no owner.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_lifecycle_stage
+        description: >
+          HubSpot lifecycle label stored for reconciliation. It is not canonical
+          commercial_status, and staging does not limit it to a closed list. Null means
+          HubSpot stored no label.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is hubspot. It is
+          not a business attribute and it is not part of the observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - hubspot
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. It is not a business attribute and it
+          is not part of the observation key. Many observations may share one delivery.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. It is not a business attribute and
+          it is not part of the observation key. A value later than observed_at is
+          valid.
+        data_tests:
+          - not_null

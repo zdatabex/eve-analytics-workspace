@@ -1,0 +1,143 @@
+version: 2
+
+models:
+  - name: stg_dealhub__booking
+    description: >
+      One recognized DealHub booking. The grain is one recognized booking, keyed by
+      dealhub_booking_id. History is immutable: the row is not observed again. Read
+      from source('dealhub', 'booking'). Downstream models ref() this relation.
+      renamed selects each landed column with no expression. The row is a source
+      booking, not a canonical booking. booking_amount stays the recognized booking
+      amount. It is not ARR and not the HubSpot deal amount. HubSpot identifiers
+      stay unresolved, and staging does not look them up. source_system,
+      delivery_id, and ingested_at are delivery metadata and are not part of the
+      grain key. Late ingested_at is valid. Reconciliation exceptions: none.
+    columns:
+      - name: dealhub_booking_id
+        description: >
+          Opaque DealHub identifier for one immutable booking. The observation key is
+          this column alone. Not a canonical surrogate key, and staging does not reject
+          a value for its shape.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: dealhub_contract_id
+        description: >
+          Contract identifier the booking cites. Many bookings may cite one contract.
+          Not a canonical contract key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: "ref('stg_dealhub__contract')"
+                field: dealhub_contract_id
+      - name: dealhub_subscription_id
+        description: >
+          Subscription identifier the booking cites. Many bookings may cite one
+          subscription. Not a canonical subscription key. A booking of a churned
+          subscription is not on or after that churn observation.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: "ref('stg_dealhub__subscription')"
+                field: dealhub_subscription_id
+      - name: hubspot_company_id
+        description: >
+          HubSpot company identifier the booking cites. Stored as the source identifier
+          DealHub recorded. For a cited contract or subscription, the booking rows and
+          the parent rows share this company identifier. Not resolved to a canonical
+          account, and this model does not read HubSpot.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier the booking cites. Stored as the source identifier
+          DealHub recorded. Not resolved to a canonical opportunity, and this model does
+          not read HubSpot.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: booking_number
+        description: >
+          Document number DealHub assigned to this booking. Unique across bookings. Not
+          a surrogate key.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: booking_type
+        description: >
+          Economic event DealHub recognized. Closed to new_business, expansion, and
+          renewal. Stored as the source value. This model does not compare it with a
+          HubSpot opportunity type.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - new_business
+                  - expansion
+                  - renewal
+      - name: booking_amount
+        description: >
+          Recognized booking amount, in US dollars with at most two fraction digits. Not
+          ARR and not the HubSpot deal amount. Zero is allowed. A negative value is not.
+          Churn does not create a booking.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: '>= 0'
+              description: >
+                booking_amount is greater than or equal to zero.
+      - name: booked_at
+        description: >
+          When DealHub recognized the booking. Distinct from ingested_at. A later
+          ingested_at is a valid late delivery. Compared with the subscription churn
+          observed_at, not with ingested_at.
+        data_tests:
+          - not_null
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is dealhub. It is
+          not a business attribute and it is not part of the booking key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - dealhub
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not a business attribute and not part
+          of the booking key. Many bookings may share one delivery, and a replay uses a
+          new delivery_id.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. Not a business attribute and not
+          part of the booking key. A value later than booked_at is a valid late
+          delivery.
+        data_tests:
+          - not_null

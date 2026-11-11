@@ -1,3 +1,6 @@
+-- When the activity names a company, an in-effect deal, contact, or lead observation that has a company must match it. A deal requires an in-effect observation. A contact or lead constrains the activity only when that observation has a company.
+-- relationships does not choose an as-of row, so unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this rule.
+
 -- When an activity names a firm, another parent constrains that firm only from
 -- the parent observation in effect at occurred_at. A deal has a company, so a
 -- missing in-effect deal observation fails. A contact or a lead constrains the

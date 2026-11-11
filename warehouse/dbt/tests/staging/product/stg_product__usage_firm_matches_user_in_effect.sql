@@ -1,3 +1,6 @@
+-- The user observation in effect at the usage occurred_at has the usage product_firm_id. No in-effect observation fails the test. The test does not add effective_start, effective_end, or is_current.
+-- relationships does not choose an as-of row, so unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this rule.
+
 with usage as (
 
     select

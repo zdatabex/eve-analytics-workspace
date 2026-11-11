@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: stg_product__ai_workflow
+    description: >
+      Current Product AI workflow staging interface. The grain is one AI workflow,
+      keyed by product_workflow_id. History stays current because the landed
+      contract stores one current row. Read from source('product', 'ai_workflow').
+      Downstream models ref() this relation. renamed selects each landed column with
+      no expression. The model does not resolve canonical identity, derive adoption,
+      or calculate a metric. source_system, delivery_id, and ingested_at are
+      delivery metadata and are not part of the grain key. Late ingested_at is
+      valid. Reconciliation exceptions: none.
+    columns:
+      - name: product_workflow_id
+        description: >
+          Opaque Product workflow identifier. Required non-empty string. Not a canonical
+          ai_workflow_id surrogate and not an adoption measure.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: workflow_code
+        description: >
+          Open catalog code, unique across workflows. Required non-empty string. The
+          code list is not closed. Not a canonical workflow surrogate and not an
+          adoption measure.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: workflow_name
+        description: >
+          Open text capability name. Required and non-empty. Not a canonical attribute
+          and not an adoption measure.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: source_system
+        description: >
+          Ingestion metadata. The landed source system for every Product row. Not a
+          canonical business attribute and not an adoption measure.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - product
+      - name: delivery_id
+        description: >
+          Ingestion metadata. Non-empty extraction batch id. Many rows may share one
+          delivery_id. Not unique, not a canonical business attribute, and not an
+          adoption measure.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          Ingestion metadata. Timestamp when the delivery was accepted. Not a canonical
+          business attribute and not an adoption measure.
+        data_tests:
+          - not_null
