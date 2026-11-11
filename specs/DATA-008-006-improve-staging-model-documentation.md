@@ -133,17 +133,17 @@ The first sentence says what one row is. A later sentence is only the surprise o
 | `stg_hubspot__company` | One HubSpot company as HubSpot recorded it at one time | A later recording of the same company is another row | Deal amount, contract value, and booking amount live on the HubSpot deal and the DealHub models |
 | `stg_hubspot__contact` | One HubSpot contact as HubSpot recorded that person at one time | A later recording of the same contact is another row | |
 | `stg_hubspot__lead` | One HubSpot lead as HubSpot recorded its status at one time | A later status is another row | |
-| `stg_hubspot__deal` | One HubSpot deal as HubSpot recorded it at one time | A later stage is another row | Booking amount lives on DealHub bookings, and the repeating charge lives on the DealHub subscription |
+| `stg_hubspot__deal` | One HubSpot deal as HubSpot recorded it at one time | A later recording of the same deal is another row even when the stage stays the same | Booking amount lives on DealHub bookings, and the repeating charge lives on the DealHub subscription |
 | `stg_hubspot__activity` | One HubSpot call, email, or meeting | The activity is kept as recorded and can name a firm, a contact, a lead, a deal, or more than one of those | |
-| `stg_dealhub__quote` | One DealHub quote as DealHub recorded it at one time | A later status is another row | Contract value lives on the DealHub contract |
-| `stg_dealhub__contract` | One DealHub contract as DealHub recorded it at one time | A later change to value or dates is another row | The repeating charge lives on the DealHub subscription |
+| `stg_dealhub__quote` | One DealHub quote as DealHub recorded it at one time | A later status or quoted price is another row | Contract value lives on the DealHub contract |
+| `stg_dealhub__contract` | One DealHub contract as DealHub recorded it at one time | A later change to status, value, or dates is another row | The repeating charge lives on the DealHub subscription |
 | `stg_dealhub__subscription` | One DealHub subscription as DealHub recorded it at one time | A renewal or an expansion can be recorded while the subscription stays active | Booking amount lives on DealHub bookings |
 | `stg_dealhub__booking` | One booking DealHub recognized | The booking is kept as recorded | Deal amount and the repeating charge stay on the HubSpot deal and the DealHub subscription |
 | `stg_marketing__campaign` | The three sentences quoted above | | |
 | `stg_marketing__campaign_performance` | One marketing campaign on one calendar day | A correction replaces that day's spend, impressions, and clicks | |
 | `stg_marketing__touch` | One attribution touch Marketing recorded | The touch is kept as recorded and can name a contact, a lead, a firm, or more than one | |
 | `stg_product__firm` | One firm as Product currently stores that tenant | A correction replaces the firm record | |
-| `stg_product__user` | One product login as Product recorded it at one time | A later status or firm is another row | |
+| `stg_product__user` | One product login as Product recorded it at one time | A later status, firm, or email change is another row | |
 | `stg_product__ai_workflow` | One AI workflow as Product currently stores it | A correction replaces that workflow | |
 | `stg_product__usage` | One use of one AI workflow by one product login | The use is kept as recorded | Results of that use live on the product outcome row |
 | `stg_product__outcome` | One result of one product use | The result is kept as recorded | |
@@ -184,7 +184,7 @@ Closed values use these words:
 
 | Column | Words |
 |---|---|
-| `segment` | solo, small, mid-size, or large |
+| `segment` | solo, small, mid, or large |
 | `icp_fit` | in the ideal customer profile, or outside it |
 | `buying_role` | champion, decision maker, user, or billing |
 | lead `status` | new, working, qualified, disqualified, or converted |
@@ -211,8 +211,9 @@ These distinctions stay in the column sentence that owns them:
 - `created_at` stays the time the lead or deal was created. `observed_at` is when that recording was taken. `occurred_at`, `booked_at`, `performance_date`, and the term dates are the other times, each named for the event it marks.
 - A campaign id on a HubSpot lead, a subscription id on a HubSpot deal, and a HubSpot id stored on a DealHub or Marketing row is that other system's id.
 - `dealhub_subscription_id` on a HubSpot deal is the subscription an expansion or renewal targets. New business leaves it blank.
+- A lead's `hubspot_deal_id` is present only on the converted observation and blank otherwise.
 - Lead `emitted_event` is blank while the lead is working. Deal `emitted_event` is blank when the stage did not change on that recording. Subscription `emitted_event` is blank while pending, and blank on an active subscription that is not a renewal or expansion.
-- A blank deal amount, quoted price, contract value, repeating charge, booking amount, spend, impression count, or click count stays blank. A draft quote may leave the quoted price blank.
+- A blank deal amount, quoted price, spend, impression count, or click count stays blank. A draft quote may leave the quoted price blank.
 - Clicks on a campaign day can exceed impressions.
 - The same email can appear on more than one HubSpot contact and on more than one product login. A product login is not a HubSpot contact and is not a billed seat.
 - A Product firm's name and web address can differ from the HubSpot company for the same firm.
