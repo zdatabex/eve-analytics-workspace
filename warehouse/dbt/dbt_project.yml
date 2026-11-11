@@ -1,0 +1,37 @@
+name: eve_analytics
+version: 1.0.0
+config-version: 2
+
+profile: eve_analytics
+
+model-paths:
+  - models
+analysis-paths:
+  - analyses
+test-paths:
+  - tests
+seed-paths:
+  - seeds
+macro-paths:
+  - macros
+snapshot-paths:
+  - snapshots
+
+clean-targets:
+  - target
+  - dbt_packages
+  - logs
+
+vars:
+  date_spine_start_date: "2024-01-01"
+  date_spine_end_date: "2025-07-01"
+
+models:
+  eve_analytics:
+    +materialized: view
+    intermediate:
+      +materialized: ephemeral
+    marts:
+      +materialized: table
+    utilities:
+      +materialized: table

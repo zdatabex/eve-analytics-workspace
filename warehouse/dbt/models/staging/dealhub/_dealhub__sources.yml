@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: dealhub
+    description: Raw DealHub source records landed by DATA-006 without transformation.
+    schema: raw_dealhub
+    tables:
+      - name: quote
+      - name: contract
+      - name: subscription
+      - name: booking

@@ -1,0 +1,8 @@
+eve_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('EVE_DBT_DUCKDB_PATH', '../../data/warehouse/dev_data_003') }}"
+      schema: "{{ env_var('EVE_DBT_SCHEMA', 'dev_dbt') }}"
+      threads: 4

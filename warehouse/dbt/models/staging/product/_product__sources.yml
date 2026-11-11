@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: product
+    description: Raw Product source records landed by DATA-006 without transformation.
+    schema: raw_product
+    tables:
+      - name: firm
+      - name: user
+      - name: ai_workflow
+      - name: usage
+      - name: outcome

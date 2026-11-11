@@ -1,0 +1,19 @@
+version: 2
+
+macros:
+  - name: effective_date
+    description: >
+      Returns source columns plus effective_start, effective_end, and is_current.
+      Consecutive observations whose tracked values do not change are collapsed.
+      effective_start is inclusive, effective_end is exclusive, and the current
+      row has a null effective_end. The result has exactly one current row for
+      every entity represented by the input relation.
+    arguments:
+      - name: relation
+        description: Relation containing ordered source observations.
+      - name: entity_key
+        description: Ordered column names that identify one surviving entity.
+      - name: observed_at
+        description: Column name that supplies each version's inclusive start.
+      - name: tracked_columns
+        description: Column names whose changes open a new version.

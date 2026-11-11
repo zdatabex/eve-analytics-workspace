@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: date_spine
+    description: >
+      Warehouse utility with one row per calendar date from 2024-01-01 through
+      2025-07-01, inclusive. The range covers the baseline development dataset
+      and can be overridden with project variables.
+    columns:
+      - name: date_day
+        description: Calendar date and unique key at the model's daily grain.
+        data_tests:
+          - unique
+          - not_null
