@@ -228,6 +228,8 @@ Referential order: campaigns and AI workflows, then firms that share one domain 
 - The canonical model is independent of physical source layouts. Source-specific identifiers stay on the mapped entities and in this source schema.
 - Adding or replacing a source changes `source-mapping.md` and the generator inputs. It does not require a new canonical identifier scheme.
 - Metric definitions for ARR, retention rate, pipeline coverage, and adoption rate are later work. The history those metrics need is already named above.
+
+The metric and mart contract in `metric-contract.md` defines sourced pipeline, influenced pipeline, bookings, ARR annualization, retention, adoption as the 0/1 flag, and customer value. Pipeline coverage and an adoption rate remain undefined.
 - Reactivation after churn is a later `opportunity_won` and a new or returning commercial status. There is no separate reactivation event.
 - A campaign channel correction updates the current campaign row and therefore the channel seen on historical touches.
 - This design leaves `contracts/` unchanged.
@@ -265,7 +267,7 @@ The alternative is one `adoption_reached` event per product user. That would cha
 
 This choice is unresolved because the alternative adds a grain. The working assumption is that ARR history is reconstructed later from the subscription dimension: `recurring_amount`, `billing_frequency`, status, and the effective-dated row. Bookings stay on `booking`. HubSpot `amount` stays on `opportunity`. This design has no periodic ARR snapshot entity.
 
-The alternative is a periodic ARR fact, one row per subscription per month. That adds an entity and a grain. Confirm that subscription Type 2 history is sufficient before DATA-002. The annualization formula remains later metric work either way.
+The alternative is a periodic ARR fact, one row per subscription per month. That adds an entity and a grain. Confirm that subscription Type 2 history is sufficient before DATA-002. The revenue-history grain question stays open. The annualization formula is defined in `metric-contract.md`.
 
 ## Future sources
 

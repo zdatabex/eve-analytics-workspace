@@ -4,7 +4,7 @@ These entities are the shared GTM model for Marketing, Sales, Customer Success, 
 
 A canonical primary key is a surrogate. A surrogate stays stable when a source system is replaced, and a non-surviving duplicate can keep its own primary key while it points at the survivor. Where a business key exists, it is the stable business identifier used for matching or for a human-readable document number. The business key is not the primary key because it can be absent, it can change, or it is issued by one source system.
 
-Amounts are observed commercial amounts in US dollars. They are inputs to later pipeline, bookings, and ARR metrics. This model does not store calculated ARR, retention, pipeline coverage, or adoption scores.
+Amounts are observed commercial amounts in US dollars. They are inputs to later pipeline, bookings, and ARR metrics. This model does not store calculated ARR, retention, pipeline coverage, or adoption scores. The metric and mart contract in `metric-contract.md` defines sourced pipeline, influenced pipeline, bookings, ARR annualization, retention, adoption as the 0/1 flag, and customer value. Pipeline coverage and an adoption rate remain undefined.
 
 The business grain of an entity is one instance of that entity. Where slowly changing dimension Type 2 applies, the analytical dimension uses a second grain: one row is one effective-dated version. `decisions.md` defines that row grain. The two grains are different, and both are stated on each Type 2 entity below.
 
