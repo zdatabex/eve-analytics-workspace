@@ -8,3 +8,10 @@ Create the impl worktree with ./scripts/worktree.sh create impl {{TICKET}} {{SLU
 Set status:in-progress when you start.
 Stay inside the specification's allowed_paths.
 When the work is ready, open an implementation pull request titled `{{TICKET}} impl: <issue title without the ticket id>` and set status:review. Do not merge.
+Use this pull request body. Check every box before opening it. A Test plan item is a command you ran, with its result. Do not add an item that says the reviewer confirms something.
+
+## Summary
+- One to three bullets naming what this pull request contains.
+
+## Test plan
+- [x] The command that was run, and its result.

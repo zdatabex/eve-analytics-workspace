@@ -8,4 +8,11 @@ Read every skill named in that agent file before writing the specification. The 
 Create the spec worktree with ./scripts/worktree.sh create spec {{TICKET}} {{SLUG}}.
 Write specs/{{TICKET}}-{{SLUG}}.md on that branch.
 Open a specification pull request titled `{{TICKET}} spec: <issue title without the ticket id>` and set status:spec-review.
+Use this pull request body. Check every box before opening it. Do not add an item that says the reviewer confirms something.
+
+## Summary
+- One to three bullets naming what this pull request contains.
+
+## Test plan
+- [x] This pull request contains only the specification file.
 Do not implement. Do not merge.
