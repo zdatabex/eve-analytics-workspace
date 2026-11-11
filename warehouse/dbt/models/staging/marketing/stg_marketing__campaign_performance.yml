@@ -2,19 +2,7 @@ version: 2
 
 models:
   - name: stg_marketing__campaign_performance
-    description: >
-      One Marketing campaign on one calendar day. The grain is one campaign on one
-      day, keyed by marketing_campaign_id and performance_date. History class is
-      immutable: a correction replaces that campaign-day in the landed table, and
-      this model does not version it. There is no separate performance document id.
-      Read from source('marketing', 'campaign_performance'). Downstream models ref()
-      this relation. renamed selects each landed column with no expression.
-      Canonical identity, attribution logic, and metrics are absent. Measures are
-      not summed onto the campaign. spend_amount stays on this source, it is not a
-      HubSpot amount or a DealHub amount, and a null spend is not zero.
-      source_system, delivery_id, and ingested_at are delivery metadata and are not
-      part of the grain key. Late ingested_at is valid. Reconciliation exceptions:
-      none.
+    description: "One marketing campaign on one calendar day. A correction replaces that day's spend, impressions, and clicks."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -23,11 +11,7 @@ models:
               - performance_date
     columns:
       - name: marketing_campaign_id
-        description: >
-          Campaign source identifier. It references
-          stg_marketing__campaign.marketing_campaign_id. Not a canonical campaign_id. A
-          required string is present and not empty. A missing campaign fails the
-          relationship test and stays in this view.
+        description: "Marketing's id for the campaign this day belongs to."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
@@ -38,17 +22,11 @@ models:
                 to: "ref('stg_marketing__campaign')"
                 field: marketing_campaign_id
       - name: performance_date
-        description: >
-          Delivery day as a calendar date. Distinct from ingested_at. Part of the
-          campaign-day key with marketing_campaign_id.
+        description: "The calendar day these campaign results cover."
         data_tests:
           - not_null
       - name: spend_amount
-        description: >
-          That day's spend in US dollars. There is no currency field. Null means the
-          source did not report it. Null is not zero. When present, the amount is
-          greater than or equal to zero and stays at two fraction digits. This amount is
-          not a HubSpot amount, a DealHub amount, or a campaign attribute.
+        description: "That day's spend in US dollars, which stays blank when Marketing left it blank."
         data_tests:
           - dbt_utils.accepted_range:
               arguments:
@@ -58,9 +36,7 @@ models:
                 spend_amount is greater than or equal to zero when present, and null stays
                 null.
       - name: impression_count
-        description: >
-          That day's impressions. Null means the source did not report it. Null is not
-          zero. When present, the count is a whole number greater than or equal to zero.
+        description: "The impressions counted for that campaign day, which stay blank when Marketing left them blank."
         data_tests:
           - dbt_utils.accepted_range:
               arguments:
@@ -70,10 +46,7 @@ models:
                 impression_count is greater than or equal to zero when present, and null stays
                 null.
       - name: click_count
-        description: >
-          That day's clicks. Null means the source did not report it. Null is not zero.
-          When present, the count is a whole number greater than or equal to zero.
-          Clicks may exceed impressions.
+        description: "The clicks counted for that campaign day, which can exceed impressions and stay blank when Marketing left them blank."
         data_tests:
           - dbt_utils.accepted_range:
               arguments:
@@ -83,9 +56,7 @@ models:
                 click_count is greater than or equal to zero when present, and null stays
                 null.
       - name: source_system
-        description: >
-          Delivery metadata. The value is marketing. Not a business attribute and not
-          part of the campaign-day key.
+        description: "The sending system for this row, which is Marketing."
         data_tests:
           - not_null
           - accepted_values:
@@ -93,17 +64,13 @@ models:
                 values:
                   - marketing
       - name: delivery_id
-        description: >
-          Extraction batch that landed this row. Not part of the campaign-day key. A
-          required string is present and not empty.
+        description: "The delivery batch this row arrived in, shared with the other rows in that batch."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: ingested_at
-        description: >
-          When the delivery was accepted, in UTC as landed. Distinct from
-          performance_date. Late delivery is valid.
+        description: "When this delivery was accepted, which can be later than the business time on the row."
         data_tests:
           - not_null

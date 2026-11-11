@@ -2,17 +2,7 @@ version: 2
 
 models:
   - name: stg_marketing__touch
-    description: >
-      One attribution touch as Marketing recorded it. The grain is one attribution
-      touch, keyed by marketing_touch_source_id. History class is immutable: the
-      source identifier is the event, and a correction is a new
-      marketing_touch_source_id. Read from source('marketing', 'touch'). Downstream
-      models ref() this relation. renamed selects each landed column with no
-      expression. Canonical marketing_touch_id, attribution logic, and metrics are
-      absent. HubSpot contact, lead, and company identifiers are passed through
-      unresolved and are not looked up. source_system, delivery_id, and ingested_at
-      are delivery metadata and are not part of the grain key. Late ingested_at is
-      valid. Reconciliation exceptions: none.
+    description: "One attribution touch Marketing recorded. The touch is kept as recorded and can name a contact, a lead, a firm, or more than one."
     data_tests:
       - dbt_utils.expression_is_true:
           arguments:
@@ -24,10 +14,7 @@ models:
             hubspot_company_id.
     columns:
       - name: marketing_touch_source_id
-        description: >
-          Opaque source identifier of the attribution touch. Not a canonical
-          marketing_touch_id. Any non-empty string is accepted; shape is not a rejection
-          rule.
+        description: "Marketing's id for this attribution touch."
         data_tests:
           - unique
           - not_null
@@ -35,11 +22,7 @@ models:
               arguments:
                 trim_whitespace: false
       - name: marketing_campaign_id
-        description: >
-          Campaign source identifier. It references
-          stg_marketing__campaign.marketing_campaign_id. Not a canonical campaign_id. A
-          required string is present and not empty. A missing campaign fails the
-          relationship test and stays in this view.
+        description: "Marketing's id for the campaign this touch belongs to."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
@@ -50,43 +33,29 @@ models:
                 to: "ref('stg_marketing__campaign')"
                 field: marketing_campaign_id
       - name: hubspot_contact_id
-        description: >
-          HubSpot contact source identifier stored on the touch. Not a canonical
-          contact_id. Null when Marketing omitted this parent. An empty string is not a
-          substitute for null. This model does not look up the HubSpot contact.
+        description: "HubSpot's id for a contact this touch names."
         data_tests:
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: hubspot_lead_id
-        description: >
-          HubSpot lead source identifier stored on the touch. Not a canonical lead_id.
-          Null when Marketing omitted this parent. An empty string is not a substitute
-          for null. This model does not look up the HubSpot lead.
+        description: "HubSpot's id for a lead this touch names."
         data_tests:
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: hubspot_company_id
-        description: >
-          HubSpot company source identifier stored on the touch. Not a canonical
-          account_id. Null when Marketing omitted this parent. An empty string is not a
-          substitute for null. This model does not check the company against a cited
-          lead or contact.
+        description: "HubSpot's id for a firm this touch names."
         data_tests:
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: occurred_at
-        description: >
-          When the touch happened, in UTC as landed. Distinct from ingested_at.
-          ingested_at may be later.
+        description: "When the touch happened."
         data_tests:
           - not_null
       - name: source_system
-        description: >
-          Delivery metadata. The value is marketing. Not a business attribute and not
-          the touch key.
+        description: "The sending system for this row, which is Marketing."
         data_tests:
           - not_null
           - accepted_values:
@@ -94,17 +63,13 @@ models:
                 values:
                   - marketing
       - name: delivery_id
-        description: >
-          Extraction batch that landed this row. Not the touch key. A required string is
-          present and not empty.
+        description: "The delivery batch this row arrived in, shared with the other rows in that batch."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: ingested_at
-        description: >
-          When the delivery was accepted, in UTC as landed. Distinct from occurred_at.
-          It may be later than occurred_at. Late delivery is valid.
+        description: "When this delivery was accepted, which can be later than the business time on the row."
         data_tests:
           - not_null

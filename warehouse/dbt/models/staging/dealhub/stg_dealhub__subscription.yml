@@ -2,21 +2,7 @@ version: 2
 
 models:
   - name: stg_dealhub__subscription
-    description: >
-      One observation of one DealHub subscription. The grain is one observation of
-      one DealHub subscription, keyed by dealhub_subscription_id and observed_at.
-      History is observation: the same dealhub_subscription_id stays on a later row
-      when observed_at changes, and every landed row is kept. Read from
-      source('dealhub', 'subscription'). Downstream models ref() this relation.
-      renamed selects each landed column with no expression. The row is a source
-      observation, not a canonical subscription. recurring_amount stays the
-      recurring fee and billing_frequency stays beside it. This model does not
-      annualize the fee, and recurring_amount is not ARR. emitted_event is the
-      source signal on that row and is not a lifecycle-event entity.
-      hubspot_company_id stays unresolved, and staging does not look it up.
-      source_system, delivery_id, and ingested_at are delivery metadata and are not
-      part of the grain key. Late ingested_at is valid. Reconciliation exceptions:
-      none.
+    description: "One DealHub subscription as DealHub recorded it at one time. A renewal or an expansion can be recorded while the subscription stays active. Booking amount lives on DealHub bookings."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -40,26 +26,18 @@ models:
             subscription_expanded, and churned has subscription_churned.
     columns:
       - name: dealhub_subscription_id
-        description: >
-          Opaque DealHub identifier for the subscription. The same identifier repeats on
-          a later observed_at. Part of the observation key. Not a canonical surrogate
-          key, and staging does not reject a value for its shape.
+        description: "DealHub's id for this subscription."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: observed_at
-        description: >
-          When DealHub recorded this observation of the subscription. With
-          dealhub_subscription_id it identifies the observation. It is not
-          effective_start. A churn comparison uses this timestamp, not ingested_at.
+        description: "When DealHub took this recording of the subscription."
         data_tests:
           - not_null
       - name: dealhub_contract_id
-        description: >
-          Contract identifier that grants this subscription. Stable across observations
-          of one dealhub_subscription_id. Not a canonical contract key.
+        description: "DealHub's id for the contract that grants this subscription."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
@@ -70,31 +48,21 @@ models:
                 to: "ref('stg_dealhub__contract')"
                 field: dealhub_contract_id
       - name: hubspot_company_id
-        description: >
-          HubSpot company identifier the subscription cites. Stored as the source
-          identifier DealHub recorded. For a cited contract, the subscription rows and
-          the contract rows share this company identifier. Not resolved to a canonical
-          account.
+        description: "HubSpot's id for the firm this subscription bills."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: subscription_number
-        description: >
-          Document number DealHub assigned to this subscription. Stable across
-          observations of one dealhub_subscription_id and exclusive to that identifier.
-          Not a surrogate key.
+        description: "The subscription number a person would read on this subscription."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: status
-        description: >
-          Subscription status DealHub stored on this observation. Closed to pending,
-          active, and churned. Durable status stays active across renewals and
-          expansions. The event is not inferred from status.
+        description: "Where this subscription stands: pending, active, or churned."
         data_tests:
           - not_null
           - accepted_values:
@@ -104,18 +72,14 @@ models:
                   - active
                   - churned
       - name: plan_code
-        description: >
-          Commercial catalog code DealHub stored for this subscription. The catalog is
-          open, so staging does not apply a closed vocabulary.
+        description: "The plan code in DealHub's own wording."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: billing_frequency
-        description: >
-          How often DealHub bills recurring_amount. Closed to monthly, quarterly, and
-          annual. Stored as the source value and not used to annualize the fee.
+        description: "How often the repeating charge is billed: monthly, quarterly, or annual."
         data_tests:
           - not_null
           - accepted_values:
@@ -125,11 +89,7 @@ models:
                   - quarterly
                   - annual
       - name: emitted_event
-        description: >
-          Source signal DealHub stored for renewal, expansion, or churn. Null when
-          status is pending, or when status is active and the observation is not a
-          renewal or expansion. Not a lifecycle_event row. Staging does not create an
-          event from status. A missing value stays null.
+        description: "The subscription signal DealHub stored is renewed, expanded, or churned, and it is blank while pending and blank on an active subscription that is not a renewal or expansion."
         data_tests:
           - accepted_values:
               arguments:
@@ -138,9 +98,7 @@ models:
                   - subscription_expanded
                   - subscription_churned
       - name: seat_count
-        description: >
-          Commercial seats on this observation. Whole number, zero or greater. Not a
-          count of product users.
+        description: "The seats billed on this subscription."
         data_tests:
           - not_null
           - dbt_utils.expression_is_true:
@@ -149,10 +107,7 @@ models:
               description: >
                 seat_count is greater than or equal to zero.
       - name: recurring_amount
-        description: >
-          Recurring fee on this observation, in US dollars with at most two fraction
-          digits. Not an annualized amount. billing_frequency is stored beside it and is
-          not applied to it.
+        description: "The repeating charge in US dollars for the billing period."
         data_tests:
           - not_null
           - dbt_utils.expression_is_true:
@@ -161,21 +116,15 @@ models:
               description: >
                 recurring_amount is greater than or equal to zero.
       - name: term_start
-        description: >
-          Current subscription term start as a calendar date. Distinct from the contract
-          agreement start and from observed_at.
+        description: "The date this subscription term starts."
         data_tests:
           - not_null
       - name: term_end
-        description: >
-          Current subscription term end as a calendar date. On or after term_start. A
-          renewal may move the term on that same observation.
+        description: "The date this subscription term ends."
         data_tests:
           - not_null
       - name: source_system
-        description: >
-          Delivery metadata identifying the landing source. The value is dealhub. It is
-          not a business attribute and it is not part of the observation key.
+        description: "The sending system for this row, which is DealHub."
         data_tests:
           - not_null
           - accepted_values:
@@ -183,19 +132,13 @@ models:
                 values:
                   - dealhub
       - name: delivery_id
-        description: >
-          Extraction batch that landed this row. Not a business attribute and not part
-          of the observation key. Many observations may share one delivery, and a replay
-          uses a new delivery_id.
+        description: "The delivery batch this row arrived in, shared with the other rows in that batch."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: ingested_at
-        description: >
-          When the platform accepted this delivery. Not a business attribute and not
-          part of the observation key. A value later than observed_at is a valid late
-          delivery.
+        description: "When this delivery was accepted, which can be later than the business time on the row."
         data_tests:
           - not_null
