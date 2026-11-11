@@ -92,7 +92,7 @@ Staged inputs, after DATA-008-005, and the conformed identities from DATA-009-00
 
 Marketing touches, campaigns, activities, quotes, contracts, subscriptions, bookings, product firms, and product usage are not inputs. Apollo and Clay are not inputs.
 
-The development warehouses are `data/warehouse/dev_data_003` and `data/warehouse/dev_data_004`. Both are local artifacts and stay untracked. `dev_data_004` includes a converting lead with a won deal, a converting lead with a lost deal, a converting lead whose deal moves from proposal back to evaluation and then onward, a later win on a firm that already has a first win, and a domain-twin firm whose lead ends disqualified. `dev_data_003` includes leads with no firm and deals whose amount is null. The tests encode the rules below, so both warehouses exercise them. The tests do not hardcode a source identifier from either warehouse.
+The development warehouses are `data/warehouse/dev_data_003` and `data/warehouse/dev_data_004`. Both are local artifacts and stay untracked. `dev_data_004` includes a converting lead with a won deal, a converting lead with a lost deal, a converting lead whose deal moves from proposal back to evaluation and then onward with neither a win nor a loss, a later win on a firm that already has a first win, and a domain-twin firm whose lead ends disqualified. `dev_data_003` includes leads with no firm and deals whose amount is null. The tests encode the rules below, so both warehouses exercise them. The tests do not hardcode a source identifier from either warehouse.
 
 DATA-009-003 owns commercial subscriptions and bookings, and it owns `opportunity.subscription_id`. This task does not wait for that issue and does not add that foreign key.
 
@@ -198,7 +198,7 @@ A return to an earlier open stage is a tracked stage change. It opens another ve
 
 ### Firm on the primary contact
 
-When `primary_contact_id` is present on an opportunity version, the `int_contact` version for that `contact_id` in effect at the opportunity version's `effective_start` has `account_id` equal to the opportunity's `account_id`. In effect means the contact version's `effective_start` is at or before that timestamp and its `effective_end` is null or after that timestamp. The deal and the contact cite the same HubSpot company at that time, so both resolve to the same account, including a duplicate account. A missing contact version at that timestamp is a failed relationship. The implementation does not drop the deal and does not rewrite either account.
+When `primary_contact_id` is present on an opportunity version, the `int_contact` version for that `contact_id` in effect at the `observed_at` of the observation that supplied `primary_contact_id` has `account_id` equal to the opportunity's `account_id`. That observation is the latest observation in the version interval. In effect means the contact version's `effective_start` is at or before that `observed_at` and its `effective_end` is null or after that `observed_at`. The deal and the contact cite the same HubSpot company on that observation, so both resolve to the same account, including a duplicate account. A contact-only change keeps that later person on the version, and this comparison uses that observation's `observed_at`. A missing contact version at that timestamp is a failed relationship. The implementation does not drop the deal and does not rewrite either account.
 
 ### Lifecycle events
 
@@ -210,19 +210,19 @@ The foreign keys follow the event catalog. Absent means null.
 
 | Event | `subject_entity` | `lifecycle_stage` | `account_id` | `lead_id` | `opportunity_id` |
 |---|---|---|---|---|---|
-| `lead_created` | `lead` | `lead` | The firm on the emitting observation, null when that observation has no firm | The lead | Null |
-| `lead_qualified` | `lead` | `lead` | The firm on the emitting observation, null when that observation has no firm | The lead | Null |
-| `lead_disqualified` | `lead` | `lead` | The firm on the emitting observation, null when that observation has no firm | The lead | Null |
-| `lead_converted` | `lead` | `lead` | The firm on the converted observation | The lead | The opportunity that stores that observation's `hubspot_deal_id` |
+| `lead_created` | `lead` | `lead` | The current lead's firm, null when that lead has no firm | The lead | Null |
+| `lead_qualified` | `lead` | `lead` | The current lead's firm, null when that lead has no firm | The lead | Null |
+| `lead_disqualified` | `lead` | `lead` | The current lead's firm, null when that lead has no firm | The lead | Null |
+| `lead_converted` | `lead` | `lead` | The current lead's firm | The lead | The opportunity that stores that observation's `hubspot_deal_id` |
 | `opportunity_opened` | `opportunity` | `opportunity` | The opportunity's `account_id` | Null | The opportunity |
 | `opportunity_stage_changed` | `opportunity` | `opportunity` | The opportunity's `account_id` | Null | The opportunity |
 | `opportunity_won` | `opportunity` | `opportunity` | The opportunity's `account_id` | Null | The opportunity |
 | `opportunity_lost` | `opportunity` | `opportunity` | The opportunity's `account_id` | Null | The opportunity |
 | `customer_converted` | `account` | `customer` | The winning opportunity's `account_id` | Null | That opportunity |
 
-A lead event resolves `account_id` from the `hubspot_company_id` on the observation that emitted it, using the same account lookup as the lead. A later observation's firm is not written onto an earlier event. The current lead row still takes its firm from the latest observation. When every non-null company on that lead is the same company, every non-null lead-event `account_id` equals the lead's `account_id`.
+Each lead event's `account_id` is the current lead's `account_id`. It is present when that lead has a firm and null when it does not.
 
-`lead_converted.account_id` is present. It equals the lead's `account_id` and the opportunity's `account_id`. A converted observation with a blank company is a failed relationship, not a firm copied from the deal.
+`lead_converted.account_id` is present. It equals the lead's `account_id` and the opportunity's `account_id`. A converted lead with no firm is a failed relationship, not a firm copied from the deal.
 
 `customer_converted` is one row per `account_id` that has an `opportunity_won`. Choose the `opportunity_won` with the earliest `occurred_at` for that stored `account_id`. When those times tie, choose the ascending `opportunity_id` text. `occurred_at` and `opportunity_id` on `customer_converted` equal that win. A later win for the same `account_id` keeps its own `opportunity_won` and does not add a second `customer_converted`. An account with no win has no `customer_converted`. The event stays on the stored `account_id`. It is not moved through `surviving_account_id`.
 
@@ -246,9 +246,9 @@ For each opportunity:
 - At most one `opportunity_won` and at most one `opportunity_lost`. A deal does not have both.
 - The open row's `stage` equals the latest observation's `stage`. That stage is `closed_won` exactly when the deal has `opportunity_won`, and `closed_lost` exactly when the deal has `opportunity_lost`. An open stage has neither event.
 - Event `occurred_at` order equals the `observed_at` order of the observations that emitted them.
-- When the ordered stages of a deal return to an earlier open stage, the versions ordered by `effective_start` keep both the earlier stage and the later return, and the open row's stage is the last observation's stage. The return is `opportunity_stage_changed`. That deal has neither `opportunity_won` nor `opportunity_lost`.
+- When the ordered stages of a deal return to an earlier open stage, the versions ordered by `effective_start` keep both the earlier stage and the later return, and the open row's stage is the last observation's stage. The return is `opportunity_stage_changed`. A later close after that return is still one `opportunity_won` or one `opportunity_lost`.
 
-`dev_data_004` records those sequences as a won conversion, a loss, a proposal that returns to evaluation, and a later win on a firm that already converted. The tests compute the sequences from the staged observations.
+`dev_data_004` records those sequences as a won conversion, a loss, a proposal that returns to evaluation and then onward, and a later win on a firm that already converted. The generated regression journey has neither `opportunity_won` nor `opportunity_lost`. The tests compute the sequences from the staged observations.
 
 ### What stays staged
 
@@ -384,9 +384,9 @@ Each file is under `warehouse/dbt/tests/intermediate/`. The leading comment stat
 | File | Rule |
 |---|---|
 | `lead_identity.sql` | One `lead_id` per `hubspot_lead_id`, the HubSpot surrogate, a null `surviving_lead_id`, the latest observation's status, firm, and person, a blank firm or person staying null, and a duplicate firm's own `account_id` stored on the lead. |
-| `opportunity_identity.sql` | One `opportunity_id` per `hubspot_deal_id`, the HubSpot surrogate, a null `surviving_opportunity_id`, the firm, person, and inquiry links, `lead_id` unique across deals, a present `lead_id` belonging to a converted inquiry, that converted inquiry pointing at this one deal, a disqualified inquiry pointing at none, the contact version in effect at `effective_start` having the deal's `account_id`, and equal deal names staying two deals. |
+| `opportunity_identity.sql` | One `opportunity_id` per `hubspot_deal_id`, the HubSpot surrogate, a null `surviving_opportunity_id`, the firm, person, and inquiry links, `lead_id` unique across deals, a present `lead_id` belonging to a converted inquiry, that converted inquiry pointing at this one deal, a disqualified inquiry pointing at none, the contact version in effect at the `observed_at` of the observation that supplied `primary_contact_id` having the deal's `account_id`, and equal deal names staying two deals. |
 | `opportunity_history.sql` | Version bounds, tracked values from the opening observation, name and primary person from the latest observation in the interval, a name-only or contact-only change adding no row, one open row, the open row matching the latest observation, a null amount staying null, and a return to an earlier open stage keeping the earlier version and opening another. |
-| `lifecycle_lead.sql` | One lifecycle row per non-null lead `emitted_event` at that `observed_at`, no row for `working`, one `lead_created` at `created_at`, qualification and disqualification not both present, conversion after qualification, current status agreeing with those events, and the converted inquiry's one deal equal to the deal named on that observation. |
+| `lifecycle_lead.sql` | One lifecycle row per non-null lead `emitted_event` at that `observed_at`, no row for `working`, one `lead_created` at `created_at`, qualification and disqualification not both present, conversion after qualification, current status agreeing with those events, the converted inquiry's one deal equal to the deal named on that observation, and each lead event's `account_id` equal to the current lead's `account_id`, present when that lead has a firm and null when it does not. |
 | `lifecycle_opportunity.sql` | One lifecycle row per non-null deal `emitted_event` at that `observed_at`, no row for an unchanged stage, opening recorded as `opportunity_opened`, a later open stage including a return recorded as `opportunity_stage_changed`, win and loss not both present, and the open stage agreeing with the latest observation and with the win or loss event. |
 | `lifecycle_customer_converted.sql` | One `customer_converted` for the earliest win of a stored `account_id`, a later win adding no second event, that event carrying the win's deal and time, catalog presence of `account_id`, `lead_id`, and `opportunity_id` for every stored event name, `subscription_id` null on every row, and no adoption or subscription event name. |
 
@@ -411,7 +411,7 @@ A failing test stays failing. The implementation does not drop a staged row, rew
 - [ ] Each model has the grain, row key, and exact column list in this specification. `int_lifecycle_event` column order is the shared lifecycle-event column contract. Descriptions are the sentences in this specification.
 - [ ] `lead_id`, `opportunity_id`, `opportunity_version_id`, and `lifecycle_event_id` are the `dbt_utils.generate_surrogate_key` results specified above. Opportunity version bounds come from `effective_date`. The macros are unchanged. The lead and the lifecycle event do not call `effective_date`.
 - [ ] The same staged lead or deal resolves to the same lead or opportunity on every run. Repeated observations leave one current lead and one open opportunity version. The current status and the open stage equal the latest staged observation. A return to an earlier open stage keeps the earlier version.
-- [ ] A lead and an opportunity store the account and contact that hold the cited HubSpot identifiers, including a duplicate account or contact. A converted lead has one opportunity, a disqualified lead has none, and the primary contact's firm at the version start is the deal's firm.
+- [ ] A lead and an opportunity store the account and contact that hold the cited HubSpot identifiers, including a duplicate account or contact. A converted lead has one opportunity, a disqualified lead has none, and the primary contact's firm at the observation that supplied `primary_contact_id` is the deal's firm.
 - [ ] Conversion, loss, and stage regression each produce the lifecycle sequence in this specification. `customer_converted` exists once for the earliest win of a stored account and does not repeat for a later win. Missing, duplicate, and contradictory outcomes fail the singular tests.
 - [ ] The models contain no attribution, conversion-rate, pipeline-value, or revenue metric, and no subscription or booking attribute.
 - [ ] From `warehouse/dbt/`, with `EVE_DBT_SCHEMA=dev_data_009_002`, `dbt parse` succeeds and `dbt build --select +int_lead +int_opportunity +int_lifecycle_event path:tests/intermediate` succeeds against `data/warehouse/dev_data_003` and against `data/warehouse/dev_data_004`. The existing account and contact tests in that path still pass.
