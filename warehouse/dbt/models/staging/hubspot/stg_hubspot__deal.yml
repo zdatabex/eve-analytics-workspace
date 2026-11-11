@@ -2,19 +2,7 @@ version: 2
 
 models:
   - name: stg_hubspot__deal
-    description: >
-      One landed observation of one HubSpot deal. The grain is one observation of
-      one HubSpot deal, keyed by hubspot_deal_id and observed_at. History is
-      observation: each stage signal remains its own row, and every landed row is
-      kept. Read from source('hubspot', 'deal'). Downstream models ref() this
-      relation instead of reading raw_hubspot. renamed selects each landed column
-      with no expression. This model does not emit a lifecycle event and does not
-      calculate bookings or ARR. amount stays the HubSpot-entered amount, and a null
-      amount is not zero. dealhub_subscription_id stays unresolved, and staging does
-      not look it up. emitted_event is the source signal on that row and is not a
-      lifecycle-event entity. source_system, delivery_id, and ingested_at are
-      delivery metadata and are not part of the grain key. Late ingested_at is
-      valid. Reconciliation exceptions: none.
+    description: "One HubSpot deal as HubSpot recorded it at one time. A later recording of the same deal is another row even when the stage stays the same. Contract value lives on the DealHub contract, booking amount lives on DealHub bookings, and the repeating charge lives on the DealHub subscription."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -42,25 +30,18 @@ models:
             have a non-empty dealhub_subscription_id.
     columns:
       - name: hubspot_deal_id
-        description: >
-          Opaque HubSpot identifier for the deal. The same identifier repeats on later
-          observations. It is not a canonical opportunity key.
+        description: "HubSpot's id for this deal."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: observed_at
-        description: >
-          When HubSpot recorded this deal observation. With hubspot_deal_id it
-          identifies the observation. It is at or after created_at.
+        description: "When HubSpot took this recording of the deal."
         data_tests:
           - not_null
       - name: hubspot_company_id
-        description: >
-          HubSpot firm identifier for the deal. The same firm stays on every observation
-          of one deal, and the value matches a company identifier in
-          stg_hubspot__company.
+        description: "HubSpot's id for the firm this deal belongs to."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
@@ -71,11 +52,7 @@ models:
                 to: 'ref("stg_hubspot__company")'
                 field: hubspot_company_id
       - name: hubspot_contact_id
-        description: >
-          HubSpot person identifier cited by this deal observation. Null means the deal
-          names no contact. A present value matches a contact identifier in
-          stg_hubspot__contact, and the contact observation in effect at observed_at
-          cites the same firm as the deal.
+        description: "HubSpot's id for the contact this deal names."
         data_tests:
           - dbt_utils.not_empty_string:
               arguments:
@@ -85,10 +62,7 @@ models:
                 to: 'ref("stg_hubspot__contact")'
                 field: hubspot_contact_id
       - name: hubspot_lead_id
-        description: >
-          HubSpot lead identifier cited by this deal. Null means the deal names no lead.
-          Every non-null value on one deal is the same, a present value matches a lead
-          identifier in stg_hubspot__lead, and one lead identifier belongs to one deal.
+        description: "HubSpot's id for the lead this deal came from."
         data_tests:
           - dbt_utils.not_empty_string:
               arguments:
@@ -98,28 +72,20 @@ models:
                 to: 'ref("stg_hubspot__lead")'
                 field: hubspot_lead_id
       - name: dealhub_subscription_id
-        description: >
-          Unresolved DealHub subscription identifier stored on the HubSpot deal. It is
-          null on a new_business observation and present on expansion and renewal.
-          Staging does not look up the subscription.
+        description: "DealHub's id for the subscription an expansion or renewal targets, which new business leaves blank."
         data_tests:
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: opportunity_name
-        description: >
-          Deal name HubSpot stored on this observation. Two deals may share a name when
-          their identifiers differ. Staging does not collapse them.
+        description: "The deal name in HubSpot's own wording."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: opportunity_type
-        description: >
-          HubSpot opportunity type on this observation. new_business carries no DealHub
-          subscription identifier. expansion and renewal carry one, and staging does not
-          check that the subscription exists.
+        description: "Whether this deal is new business, expansion, or renewal."
         data_tests:
           - not_null
           - accepted_values:
@@ -129,10 +95,7 @@ models:
                   - expansion
                   - renewal
       - name: stage
-        description: >
-          HubSpot stage on this observation. A stage that differs from the prior
-          observation of the same deal carries the matching source signal. A repeated
-          stage carries no signal.
+        description: "Where this deal stands: discovery, evaluation, proposal, negotiation, closed won, or closed lost."
         data_tests:
           - not_null
           - accepted_values:
@@ -145,18 +108,13 @@ models:
                   - closed_won
                   - closed_lost
       - name: owner_name
-        description: >
-          Person HubSpot names as the deal owner. This is a name, not an employee
-          identifier, and it is independent of the company owner. Null means HubSpot
-          stored no owner.
+        description: "The deal owner HubSpot named, a separate owner from the firm-relationship owner, and the two may match or differ."
         data_tests:
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: forecast_category
-        description: >
-          HubSpot forecast category on this observation. Null means HubSpot stored no
-          category.
+        description: "How HubSpot forecasts this deal: pipeline, best case, commit, closed, or omitted."
         data_tests:
           - accepted_values:
               arguments:
@@ -167,10 +125,7 @@ models:
                   - closed
                   - omitted
       - name: emitted_event
-        description: >
-          Source signal stored on this deal observation. It is not a lifecycle_event
-          row, and this model does not emit customer_converted. Null means the stage did
-          not change from the prior observation.
+        description: "The deal signal HubSpot stored is opened, stage changed, won, or lost, and it is blank on a later recording whose stage stayed the same."
         data_tests:
           - accepted_values:
               arguments:
@@ -180,26 +135,15 @@ models:
                   - opportunity_won
                   - opportunity_lost
       - name: amount
-        description: >
-          HubSpot-entered deal amount. It is not bookings and not ARR. Null means
-          unreported and stays null rather than becoming zero. A reported amount is zero
-          or greater.
+        description: "The deal amount in US dollars, which stays blank when HubSpot left it blank."
       - name: expected_close_date
-        description: >
-          Close date HubSpot stored for the deal. It is a date with no time, and it is
-          distinct from created_at, observed_at, and any contract start date. Null means
-          HubSpot stored no close date.
+        description: "The date HubSpot expects the deal to close, a separate date from the contract start, and the two may match or differ."
       - name: created_at
-        description: >
-          When HubSpot created the deal. The value stays the same on every observation
-          of one hubspot_deal_id. The opening observation sets observed_at equal to this
-          timestamp.
+        description: "When HubSpot created the deal."
         data_tests:
           - not_null
       - name: source_system
-        description: >
-          Delivery metadata identifying the landing source. The value is hubspot. It is
-          not a business attribute and it is not part of the observation key.
+        description: "The sending system for this row, which is HubSpot."
         data_tests:
           - not_null
           - accepted_values:
@@ -207,18 +151,13 @@ models:
                 values:
                   - hubspot
       - name: delivery_id
-        description: >
-          Extraction batch that landed this row. It is not a business attribute and it
-          is not part of the observation key.
+        description: "The delivery batch this row arrived in, shared with the other rows in that batch."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: ingested_at
-        description: >
-          When the platform accepted this delivery. It is not a business attribute and
-          it is not part of the observation key. A value later than observed_at is
-          valid.
+        description: "When this delivery was accepted, which can be later than the business time on the row."
         data_tests:
           - not_null

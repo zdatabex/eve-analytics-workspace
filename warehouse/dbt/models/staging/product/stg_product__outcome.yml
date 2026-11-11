@@ -2,20 +2,10 @@ version: 2
 
 models:
   - name: stg_product__outcome
-    description: >
-      Immutable Product outcome staging interface. The grain is one outcome of one
-      product usage event, keyed by product_outcome_source_id. History is immutable.
-      The model does not identify an account's first outcome. Read from
-      source('product', 'outcome'). Downstream models ref() this relation. renamed
-      selects each landed column with no expression. The model does not resolve
-      canonical identity, derive adoption, or calculate a metric. source_system,
-      delivery_id, and ingested_at are delivery metadata and are not part of the
-      grain key. Late ingested_at is valid. Reconciliation exceptions: none.
+    description: "One result of one product use. The result is kept as recorded."
     columns:
       - name: product_outcome_source_id
-        description: >
-          Opaque Product outcome identifier. Required non-empty string. Not a canonical
-          product_outcome_id surrogate and not an adoption measure.
+        description: "Product's id for this result."
         data_tests:
           - unique
           - not_null
@@ -23,10 +13,7 @@ models:
               arguments:
                 trim_whitespace: false
       - name: product_usage_source_id
-        description: >
-          Relationship to the cited Product usage source identifier. Required non-empty
-          string and unique among outcomes. Not a canonical usage surrogate and not an
-          adoption measure.
+        description: "Product's id for the use this result came from."
         data_tests:
           - unique
           - not_null
@@ -38,10 +25,7 @@ models:
                 to: "ref('stg_product__usage')"
                 field: product_usage_source_id
       - name: product_user_source_id
-        description: >
-          Relationship to the Product user source identifier on the cited usage.
-          Required non-empty string. Not a canonical product user surrogate and not an
-          adoption measure.
+        description: "Product's id for the product login on that use."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
@@ -52,10 +36,7 @@ models:
                 to: "ref('stg_product__user')"
                 field: product_user_source_id
       - name: product_firm_id
-        description: >
-          Relationship to the Product firm source identifier on the cited usage.
-          Required non-empty string. Not a canonical account surrogate and not an
-          adoption measure.
+        description: "Product's id for the firm on that use."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
@@ -66,10 +47,7 @@ models:
                 to: "ref('stg_product__firm')"
                 field: product_firm_id
       - name: product_workflow_id
-        description: >
-          Relationship to the Product workflow source identifier on the cited usage.
-          Required non-empty string. Not a canonical workflow surrogate and not an
-          adoption measure.
+        description: "Product's id for the AI workflow on that use."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
@@ -80,9 +58,7 @@ models:
                 to: "ref('stg_product__ai_workflow')"
                 field: product_workflow_id
       - name: outcome_type
-        description: >
-          Outcome type enum: draft_completed, review_accepted, or exported. Required.
-          Not adoption_reached and not an adoption score.
+        description: "What this result was: draft completed, review accepted, or exported."
         data_tests:
           - not_null
           - accepted_values:
@@ -92,15 +68,11 @@ models:
                   - review_accepted
                   - exported
       - name: occurred_at
-        description: >
-          Timestamp when the outcome completed. Required, and at or after the cited
-          usage occurred_at. Not an adoption timestamp.
+        description: "When this result was recorded."
         data_tests:
           - not_null
       - name: source_system
-        description: >
-          Ingestion metadata. The landed source system for every Product row. Not a
-          canonical business attribute and not an adoption measure.
+        description: "The sending system for this row, which is Product."
         data_tests:
           - not_null
           - accepted_values:
@@ -108,19 +80,13 @@ models:
                 values:
                   - product
       - name: delivery_id
-        description: >
-          Ingestion metadata. Non-empty extraction batch id. Many rows may share one
-          delivery_id. Not unique, not a canonical business attribute, and not an
-          adoption measure.
+        description: "The delivery batch this row arrived in, shared with the other rows in that batch."
         data_tests:
           - not_null
           - dbt_utils.not_empty_string:
               arguments:
                 trim_whitespace: false
       - name: ingested_at
-        description: >
-          Ingestion metadata. Timestamp when the delivery was accepted. It may be later
-          than occurred_at. Not a canonical business attribute and not an adoption
-          measure.
+        description: "When this delivery was accepted, which can be later than the business time on the row."
         data_tests:
           - not_null
