@@ -146,7 +146,7 @@ A repeated source identifier on an observation model is another observation when
 
 `stg_hubspot__contact`: `hubspot_contact_id`, `observed_at`, `hubspot_company_id`, `full_name`, `email_normalized`, `title`, `buying_role`, `source_system`, `delivery_id`, `ingested_at`.
 
-`stg_hubspot__lead`: `hubspot_lead_id`, `observed_at`, `hubspot_company_id`, `hubspot_contact_id`, `marketing_campaign_id`, `hubspot_deal_id`, `status`, `emitted_event`, `created_at`, `source_system`, `delivery_id`, `ingested_at`.
+`stg_hubspot__lead`: `hubspot_lead_id`, `observed_at`, `hubspot_company_id`, `hubspot_contact_id`, `hubspot_deal_id`, `marketing_campaign_id`, `status`, `emitted_event`, `created_at`, `source_system`, `delivery_id`, `ingested_at`.
 
 `stg_hubspot__deal`: `hubspot_deal_id`, `observed_at`, `hubspot_company_id`, `hubspot_contact_id`, `hubspot_lead_id`, `dealhub_subscription_id`, `opportunity_name`, `opportunity_type`, `stage`, `owner_name`, `forecast_category`, `emitted_event`, `amount`, `expected_close_date`, `created_at`, `source_system`, `delivery_id`, `ingested_at`.
 
