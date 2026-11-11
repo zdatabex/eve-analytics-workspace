@@ -10,13 +10,14 @@ is `data/warehouse/dev_data_004`. Generate and load either file with the
 commands documented in `data-generation/README.md`; generated DuckDB files are
 local artifacts and must not be committed.
 
-From `warehouse/dbt/`, dbt defaults to the baseline file and an isolated schema
-named `dev_data_007_001`:
+From `warehouse/dbt/`, dbt defaults to the baseline file and the development
+schema `dev_dbt`:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-export EVE_DBT_SCHEMA=dev_data_007_001
+.venv/bin/dbt deps
+export EVE_DBT_SCHEMA=dev_dbt
 .venv/bin/dbt debug --profiles-dir .
 ```
 
@@ -28,8 +29,9 @@ export EVE_DBT_DUCKDB_PATH=../../data/warehouse/dev_data_004
 ```
 
 The raw schemas are `raw_hubspot`, `raw_dealhub`, `raw_marketing`, and
-`raw_product`. The four files under `models/sources/` declare only the tables
-landed by DATA-006 and do not add freshness guarantees.
+`raw_product`. Each source system has a corresponding directory under
+`models/staging/`, where its `_<source>__sources.yml` file declares only the
+tables landed by DATA-006 and does not add freshness guarantees.
 
 ## Validate
 
