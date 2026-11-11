@@ -1,3 +1,6 @@
+-- One quote, contract, or subscription identifier has one document number across observations, and one document number belongs to one identifier.
+-- unique on the number would fail repeated observations. Booking stays out of this test because booking_number already has unique. unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this rule.
+
 -- One source identifier has one document number, and one document number
 -- belongs to one source identifier. Booking numbers are unique on the model.
 

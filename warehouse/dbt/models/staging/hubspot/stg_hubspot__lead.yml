@@ -1,0 +1,168 @@
+version: 2
+
+models:
+  - name: stg_hubspot__lead
+    description: >
+      One landed observation of one HubSpot lead. The grain is one observation of
+      one HubSpot lead, keyed by hubspot_lead_id and observed_at. History is
+      observation: each status signal remains its own row, and every landed row is
+      kept. Read from source('hubspot', 'lead'). Downstream models ref() this
+      relation instead of reading raw_hubspot. renamed selects each landed column
+      with no expression. This model does not emit a lifecycle event. emitted_event
+      is the source signal on that row and is not a lifecycle-event entity.
+      marketing_campaign_id stays unresolved, and staging does not look it up.
+      source_system, delivery_id, and ingested_at are delivery metadata and are not
+      part of the grain key. Late ingested_at is valid. Reconciliation exceptions:
+      none.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - hubspot_lead_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: 'observed_at >= created_at'
+          description: >
+            observed_at is at or after created_at.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              (status = 'working' and emitted_event is null) or (status = 'qualified' and
+              emitted_event = 'lead_qualified') or (status = 'disqualified' and
+              emitted_event = 'lead_disqualified') or (status = 'converted' and
+              emitted_event = 'lead_converted') or status = 'new'
+          description: >
+            status and emitted_event stay paired, including working with a null event and
+            new allowed by this predicate.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              ( emitted_event = 'lead_converted' and hubspot_deal_id is not null ) or (
+              coalesce(emitted_event, '') <> 'lead_converted' and hubspot_deal_id is null )
+          description: >
+            hubspot_deal_id is present only on lead_converted.
+    columns:
+      - name: hubspot_lead_id
+        description: >
+          Opaque HubSpot identifier for the lead. The same identifier repeats on later
+          observations. It is not a canonical lead key. A repeated identifier with a
+          different observed_at is another observation.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: observed_at
+        description: >
+          When HubSpot recorded this lead observation. With hubspot_lead_id it
+          identifies the observation. It is at or after created_at. The creation
+          observation sets the two equal.
+        data_tests:
+          - not_null
+      - name: hubspot_company_id
+        description: >
+          HubSpot firm identifier cited by this lead observation. Null means the lead
+          has no firm on this observation. A present value matches a company identifier
+          in stg_hubspot__company.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: 'ref("stg_hubspot__company")'
+                field: hubspot_company_id
+      - name: hubspot_contact_id
+        description: >
+          HubSpot person identifier cited by this lead observation. Null means the lead
+          has no contact on this observation. A present value matches a contact
+          identifier in stg_hubspot__contact.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: 'ref("stg_hubspot__contact")'
+                field: hubspot_contact_id
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier cited when the lead converts. It is present only on
+          the lead_converted observation and matches a deal identifier in
+          stg_hubspot__deal. Every other lead observation stores null.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: 'ref("stg_hubspot__deal")'
+                field: hubspot_deal_id
+      - name: marketing_campaign_id
+        description: >
+          Unresolved Marketing identifier stored on the HubSpot lead. Staging does not
+          look up the campaign and does not test this value against Marketing.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: status
+        description: >
+          HubSpot lead status on this observation. working carries no source signal.
+          qualified, disqualified, and converted each name the matching source signal.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - new
+                  - working
+                  - qualified
+                  - disqualified
+                  - converted
+      - name: emitted_event
+        description: >
+          Source signal stored on this lead observation. It is not a lifecycle_event
+          row, and this model does not emit customer_converted. Null means this
+          observation carries no lead signal, which is required when status is working.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - lead_created
+                  - lead_qualified
+                  - lead_disqualified
+                  - lead_converted
+      - name: created_at
+        description: >
+          When HubSpot created the lead. The value stays the same on every observation
+          of one hubspot_lead_id. It is distinct from observed_at and from ingested_at.
+        data_tests:
+          - not_null
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is hubspot. It is
+          not a business attribute and it is not part of the observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - hubspot
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. It is not a business attribute and it
+          is not part of the observation key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. It is not a business attribute and
+          it is not part of the observation key. A value later than observed_at is
+          valid.
+        data_tests:
+          - not_null

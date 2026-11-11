@@ -1,41 +1,30 @@
-with source as (
+with raw_data as (
+
+    select * from {{ source('dealhub', 'subscription') }}
+
+),
+
+renamed as (
 
     select
         dealhub_subscription_id,
+        observed_at,
+        dealhub_contract_id,
+        hubspot_company_id,
         subscription_number,
         status,
         plan_code,
+        billing_frequency,
+        emitted_event,
         seat_count,
         recurring_amount,
-        billing_frequency,
         term_start,
         term_end,
-        observed_at,
-        emitted_event,
-        dealhub_contract_id,
-        hubspot_company_id,
         source_system,
         delivery_id,
         ingested_at
-    from {{ source('dealhub', 'subscription') }}
+    from raw_data
 
 )
 
-select
-    dealhub_subscription_id,
-    subscription_number,
-    status,
-    plan_code,
-    seat_count,
-    recurring_amount,
-    billing_frequency,
-    term_start,
-    term_end,
-    observed_at,
-    emitted_event,
-    dealhub_contract_id,
-    hubspot_company_id,
-    source_system,
-    delivery_id,
-    ingested_at
-from source
+select * from renamed

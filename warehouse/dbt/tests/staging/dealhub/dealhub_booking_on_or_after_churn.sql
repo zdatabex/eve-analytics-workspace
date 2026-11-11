@@ -1,3 +1,6 @@
+-- subscription_churned occurs at most once per subscription, and no booking of that subscription has booked_at on or after that observation's observed_at. ingested_at stays out of the comparison.
+-- unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this rule.
+
 -- For each subscription, subscription_churned occurs on at most one row, and
 -- no booking of that subscription has booked_at on or after that row's
 -- observed_at. ingested_at is not part of the comparison.

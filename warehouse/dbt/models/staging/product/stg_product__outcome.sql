@@ -1,29 +1,24 @@
-with source as (
+with raw_data as (
+
+    select * from {{ source('product', 'outcome') }}
+
+),
+
+renamed as (
 
     select
         product_outcome_source_id,
-        occurred_at,
-        outcome_type,
         product_usage_source_id,
         product_user_source_id,
         product_firm_id,
         product_workflow_id,
+        outcome_type,
+        occurred_at,
         source_system,
         delivery_id,
         ingested_at
-    from {{ source('product', 'outcome') }}
+    from raw_data
 
 )
 
-select
-    product_outcome_source_id,
-    occurred_at,
-    outcome_type,
-    product_usage_source_id,
-    product_user_source_id,
-    product_firm_id,
-    product_workflow_id,
-    source_system,
-    delivery_id,
-    ingested_at
-from source
+select * from renamed

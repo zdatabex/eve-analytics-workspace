@@ -1,4 +1,10 @@
-with source as (
+with raw_data as (
+
+    select * from {{ source('product', 'ai_workflow') }}
+
+),
+
+renamed as (
 
     select
         product_workflow_id,
@@ -7,15 +13,8 @@ with source as (
         source_system,
         delivery_id,
         ingested_at
-    from {{ source('product', 'ai_workflow') }}
+    from raw_data
 
 )
 
-select
-    product_workflow_id,
-    workflow_code,
-    workflow_name,
-    source_system,
-    delivery_id,
-    ingested_at
-from source
+select * from renamed

@@ -1,0 +1,83 @@
+version: 2
+
+models:
+  - name: stg_marketing__campaign
+    description: >
+      One current Marketing campaign. The grain is one marketing campaign, keyed by
+      marketing_campaign_id. History class is current: the source keeps this row
+      only, and a channel correction replaces it. Read from source('marketing',
+      'campaign'). Downstream models ref() this relation. renamed selects each
+      landed column with no expression. Canonical campaign identity, attribution
+      logic, and metrics are absent. Spend, impressions, and clicks stay on campaign
+      performance. source_system, delivery_id, and ingested_at are delivery metadata
+      and are not part of the grain key. Late ingested_at is valid. Reconciliation
+      exceptions: none.
+    columns:
+      - name: marketing_campaign_id
+        description: >
+          Opaque source identifier issued by Marketing. Not a canonical campaign_id. Any
+          non-empty string is accepted; shape is not a rejection rule.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: campaign_code
+        description: >
+          Stable campaign code, unique across campaigns. A required string is present
+          and not empty.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: campaign_name
+        description: >
+          Program name. A required string is present and not empty.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: channel
+        description: >
+          Current campaign channel. Allowed values are paid_search, paid_social, email,
+          webinar, partner, and outbound. Channel history is this current row only.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - paid_search
+                  - paid_social
+                  - email
+                  - webinar
+                  - partner
+                  - outbound
+      - name: source_system
+        description: >
+          Delivery metadata. The value is marketing. Not a business attribute and not
+          part of the campaign key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - marketing
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not a business key. A required string
+          is present and not empty.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the delivery was accepted, in UTC as landed. Not a business event time.
+          Late delivery is valid.
+        data_tests:
+          - not_null

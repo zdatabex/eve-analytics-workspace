@@ -1,3 +1,6 @@
+-- Compares observations of one deal: created_at and hubspot_company_id are stable, hubspot_lead_id does not change within the deal, one opportunity_opened row is discovery at created_at, a stage change carries the matching emitted_event, won and lost occur at most once and not together, and one lead belongs to one deal.
+-- unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this comparison across observations.
+
 -- Deal rules that compare observations of one hubspot_deal_id, plus the rule
 -- that one lead identifier belongs to one deal. A violating row stays in the
 -- model. This check only reports it.

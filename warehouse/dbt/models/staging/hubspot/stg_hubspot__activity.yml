@@ -1,0 +1,135 @@
+version: 2
+
+models:
+  - name: stg_hubspot__activity
+    description: >
+      One landed HubSpot activity. The grain is one HubSpot activity, keyed by
+      hubspot_activity_id. History is immutable: the model has no observed_at, and
+      every landed activity is kept. Read from source('hubspot', 'activity').
+      Downstream models ref() this relation instead of reading raw_hubspot. renamed
+      selects each landed column with no expression. source_system, delivery_id, and
+      ingested_at are delivery metadata and are not part of the grain key. Late
+      ingested_at is valid. Reconciliation exceptions: none.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              hubspot_company_id is not null or hubspot_contact_id is not null or
+              hubspot_lead_id is not null or hubspot_deal_id is not null
+          description: >
+            The activity has at least one of hubspot_company_id, hubspot_contact_id,
+            hubspot_lead_id, and hubspot_deal_id.
+    columns:
+      - name: hubspot_activity_id
+        description: >
+          Opaque HubSpot identifier for one sales activity. One identifier is one
+          activity. It is not a canonical activity key, and a correction would be a new
+          identifier rather than a second observation.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_company_id
+        description: >
+          HubSpot firm identifier cited as a parent of the activity. Null means this
+          activity does not name a firm. A present value matches a company identifier in
+          stg_hubspot__company. At least one parent identifier is present.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: 'ref("stg_hubspot__company")'
+                field: hubspot_company_id
+      - name: hubspot_contact_id
+        description: >
+          HubSpot person identifier cited as a parent of the activity. Null means this
+          activity does not name a contact. A present value matches a contact identifier
+          in stg_hubspot__contact.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: 'ref("stg_hubspot__contact")'
+                field: hubspot_contact_id
+      - name: hubspot_lead_id
+        description: >
+          HubSpot lead identifier cited as a parent of the activity. Null means this
+          activity does not name a lead. A present value matches a lead identifier in
+          stg_hubspot__lead.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: 'ref("stg_hubspot__lead")'
+                field: hubspot_lead_id
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier cited as a parent of the activity. Null means this
+          activity does not name a deal. A present value matches a deal identifier in
+          stg_hubspot__deal.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: 'ref("stg_hubspot__deal")'
+                field: hubspot_deal_id
+      - name: activity_type
+        description: >
+          Kind of sales interaction HubSpot recorded.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - call
+                  - email
+                  - meeting
+      - name: subject
+        description: >
+          Short description HubSpot stored for the activity. Open text. Null means
+          HubSpot stored no subject.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: occurred_at
+        description: >
+          When the interaction happened. It is distinct from ingested_at. A later
+          ingested_at is a late delivery and remains valid.
+        data_tests:
+          - not_null
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is hubspot. It is
+          not a business attribute and it is not part of the activity key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - hubspot
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. It is not a business attribute and it
+          is not part of the activity key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. It is not a business attribute and
+          it is not part of the activity key. A value later than occurred_at is valid.
+        data_tests:
+          - not_null

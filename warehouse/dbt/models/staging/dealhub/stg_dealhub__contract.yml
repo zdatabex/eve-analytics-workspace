@@ -1,0 +1,151 @@
+version: 2
+
+models:
+  - name: stg_dealhub__contract
+    description: >
+      One observation of one DealHub contract. The grain is one observation of one
+      DealHub contract, keyed by dealhub_contract_id and observed_at. History is
+      observation: the same dealhub_contract_id stays on a later row when
+      observed_at changes, and every landed row is kept. Read from source('dealhub',
+      'contract'). Downstream models ref() this relation. renamed selects each
+      landed column with no expression. The row is a source observation, not a
+      canonical contract. total_contract_value stays the signed agreement value. It
+      is not ARR and not booking_amount. HubSpot identifiers stay unresolved, and
+      staging does not look them up. source_system, delivery_id, and ingested_at are
+      delivery metadata and are not part of the grain key. Late ingested_at is
+      valid. Reconciliation exceptions: none.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - dealhub_contract_id
+              - observed_at
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: 'end_date >= start_date'
+          description: >
+            end_date is at or after start_date.
+    columns:
+      - name: dealhub_contract_id
+        description: >
+          Opaque DealHub identifier for the contract. The same identifier repeats on a
+          later observed_at. Part of the observation key. Not a canonical surrogate key,
+          and staging does not reject a value for its shape.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: observed_at
+        description: >
+          When DealHub recorded this observation of the contract. With
+          dealhub_contract_id it identifies the observation. It is not effective_start.
+        data_tests:
+          - not_null
+      - name: dealhub_quote_id
+        description: >
+          Quote identifier this contract cites. One quote is cited by at most one
+          contract. Repeated observations of that contract are one citation. Not a
+          canonical quote key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+          - relationships:
+              arguments:
+                to: "ref('stg_dealhub__quote')"
+                field: dealhub_quote_id
+      - name: hubspot_deal_id
+        description: >
+          HubSpot deal identifier this contract cites. One deal is cited by at most one
+          contract. Stored as the source identifier DealHub recorded. This model does
+          not read HubSpot.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: hubspot_company_id
+        description: >
+          HubSpot company identifier the contract cites. Stored as the source identifier
+          DealHub recorded. For a cited quote, the contract rows and the quote rows
+          share this company identifier. Not resolved to a canonical account.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: contract_number
+        description: >
+          Document number DealHub assigned to this contract. Stable across observations
+          of one dealhub_contract_id and exclusive to that identifier. Not a surrogate
+          key.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: status
+        description: >
+          Contract status DealHub stored on this observation. Closed to active, expired,
+          and terminated.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - active
+                  - expired
+                  - terminated
+      - name: total_contract_value
+        description: >
+          Signed agreement value on this observation, in US dollars with at most two
+          fraction digits. Not ARR and not booking_amount. Zero is allowed. A negative
+          value is not.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: '>= 0'
+              description: >
+                total_contract_value is greater than or equal to zero.
+      - name: start_date
+        description: >
+          Agreement start as a calendar date. Not an opportunity close date. The two
+          dates may both be present and may differ.
+        data_tests:
+          - not_null
+      - name: end_date
+        description: >
+          Agreement end as a calendar date. On or after start_date. A later observation
+          may move this date without creating a second contract.
+        data_tests:
+          - not_null
+      - name: source_system
+        description: >
+          Delivery metadata identifying the landing source. The value is dealhub. It is
+          not a business attribute and it is not part of the observation key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - dealhub
+      - name: delivery_id
+        description: >
+          Extraction batch that landed this row. Not a business attribute and not part
+          of the observation key. Many observations may share one delivery, and a replay
+          uses a new delivery_id.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          When the platform accepted this delivery. Not a business attribute and not
+          part of the observation key. A value later than observed_at is a valid late
+          delivery.
+        data_tests:
+          - not_null

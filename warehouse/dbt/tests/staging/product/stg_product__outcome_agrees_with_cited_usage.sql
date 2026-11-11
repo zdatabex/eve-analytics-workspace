@@ -1,3 +1,6 @@
+-- The outcome's user, firm, workflow, and occurred_at agree with the cited usage. occurred_at on the outcome is at or after the usage.
+-- relationships does not compare those attributes, so unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this rule.
+
 with outcome as (
 
     select

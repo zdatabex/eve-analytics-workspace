@@ -1,3 +1,6 @@
+-- Compares observations of one hubspot_lead_id: created_at is stable, one lead_created row is status new at created_at, qualified, disqualified, and converted each occur at most once, a lead is not both qualified and disqualified, and lead_converted is at or after lead_qualified.
+-- unique, not_null, accepted_values, relationships, not_empty_string, accepted_range, and expression_is_true cannot express this comparison across observations.
+
 -- Lead rules that compare observations of one hubspot_lead_id.
 -- A violating row stays in the model. This check only reports it.
 

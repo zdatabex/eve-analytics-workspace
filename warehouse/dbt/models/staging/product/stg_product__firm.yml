@@ -1,0 +1,90 @@
+version: 2
+
+models:
+  - name: stg_product__firm
+    description: >
+      Current Product firm staging interface. The grain is one Product firm, keyed
+      by product_firm_id. History stays current because the landed contract stores
+      one current row, and this model does not collapse or version that row. Read
+      from source('product', 'firm'). Downstream models ref() this relation. renamed
+      selects each landed column with no expression. The model does not resolve
+      canonical identity, derive adoption, or calculate a metric. source_system,
+      delivery_id, and ingested_at are delivery metadata and are not part of the
+      grain key. Late ingested_at is valid. Reconciliation exceptions: none.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              primary_domain is null or ( primary_domain = lower(primary_domain) and
+              strpos(primary_domain, '://') = 0 and strpos(primary_domain, '/') = 0 and
+              strpos(primary_domain, chr(92)) = 0 and strpos(primary_domain, '@') = 0 and
+              not regexp_matches(primary_domain, '\s') )
+          description: >
+            When present, primary_domain is lowercase and contains neither a scheme, a
+            path, a backslash, an at sign, nor whitespace.
+    columns:
+      - name: product_firm_id
+        description: >
+          Opaque Product firm identifier. Required non-empty string. This is the source
+          identifier, not a canonical account surrogate, and not an adoption measure.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: firm_name
+        description: >
+          Open string for the tenant name as Product records it. Required and non-empty.
+          Not a canonical account attribute and not an adoption measure.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: primary_domain
+        description: >
+          Optional lowercase host used as Product's domain text. Null when Product has
+          no domain. An empty string is invalid. When present, the value has no scheme,
+          path, backslash, @, or whitespace. Duplicate domains stay. Not a canonical
+          account key and not an adoption measure.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: state
+        description: >
+          Optional open string for a US state. Null when absent. An empty string is
+          invalid. Not a closed postal-code list, not a canonical account attribute, and
+          not an adoption measure.
+        data_tests:
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: source_system
+        description: >
+          Ingestion metadata. The landed source system for every Product row. Not a
+          canonical business attribute and not an adoption measure.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - product
+      - name: delivery_id
+        description: >
+          Ingestion metadata. Non-empty extraction batch id. Many rows may share one
+          delivery_id. Not unique, not a canonical business attribute, and not an
+          adoption measure.
+        data_tests:
+          - not_null
+          - dbt_utils.not_empty_string:
+              arguments:
+                trim_whitespace: false
+      - name: ingested_at
+        description: >
+          Ingestion metadata. Timestamp when the delivery was accepted. It may be later
+          than a business timestamp. Not a canonical business attribute and not an
+          adoption measure.
+        data_tests:
+          - not_null
